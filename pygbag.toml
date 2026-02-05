@@ -1,0 +1,5 @@
+[pygbag]
+no_vr = true
+no_debug = true
+start_hidden = true
+

@@ -1,0 +1,906 @@
+<html lang="en-us"><script src="https://pygame-web.github.io/archives/0.9/pythons.js" type=module id=site data-LINES=57 data-CONSOLE=25 data-python=python3.12 data-os=vtx,fs,snd,gui async defer>#<!--
+
+print("""
+Loading math_bird from math_bird.apk
+    Pygbag Version : 0.9.2
+    Template Version : 0.9.0
+    Python  : 3.12
+    CDN URL : https://pygame-web.github.io/archives/0.9/
+    Screen  : 1280x720
+    Title   : math_bird
+    Folder  : math_bird
+    Authors : pgw
+    SPDX-License-Identifier: cookiecutter.spdx
+
+""")
+
+
+# screen pixels (real, hardware)
+WIDTH=1024  # 1280
+HEIGHT=600  # 720
+
+# reference/idealized screen pixels
+REFX = 1980
+REFY = 1080
+
+def u(real, ref, v):
+    if abs(v)<0.9999999:
+        result = int( (float(real)/100.0) * (v*1000))
+        if v<0:
+            return real-result
+        return result
+    return int( (real/ref) * v )
+
+def ux(*argv):
+    global WIDTH, REFX
+    acc = 0
+    for v in argv:
+        acc += u(WIDTH, REFX, v)
+    return acc
+
+def uy(*argv):
+    global HEIGHT, REFY
+    acc = 0
+    for v in argv:
+        acc += u(HEIGHT, REFY, v)
+    return acc
+
+
+
+
+# do not rename
+async def custom_site():
+
+    import sys
+    import asyncio
+    import platform
+    import json
+    from pathlib import Path
+
+
+
+    import embed
+
+
+    platform.document.body.style.background = "#7f7f7f"
+
+    import pygame
+
+    def compose():
+        pygame.display.update()
+        window.chromakey(None, *screen.get_colorkey(), 40)
+
+    pygame.init()
+    pygame.font.init()
+
+    screen = pygame.display.set_mode([ux(.100),uy(.100)], pygame.SRCALPHA, 32)
+    screen.set_colorkey( (0,0,0,0), pygame.RLEACCEL )
+    screen.fill( (0,0,0,0) )
+
+    compose()
+
+    platform.window.transfer.hidden = true
+    platform.window.canvas.style.visibility = "visible"
+
+
+
+    apk = "math_bird.apk"
+
+    bundle = "math_bird"
+
+    # the C or js loader could do that but be explicit.
+    appdir = Path(f"/data/data/{bundle}") # /data/data/math_bird
+    appdir.mkdir()
+
+
+    # mount apk
+
+    cfg = {
+        "io": "url",
+        "type":"mount",
+        "mount" : {
+            "point" : appdir.as_posix(),
+            "path" : "/",
+        },
+        "path" : f"/ => {appdir.as_posix()}",
+    }
+
+
+    track = platform.window.MM.prepare(apk, json.dumps(cfg))
+
+    marginx = ux(.020) # 20%
+    marginy = uy(.045) # 45%
+
+
+    def pg_bar(pos):
+        nonlocal marginx, marginy
+        # resolution of progress bar, recalculate since it may not be know yet.
+        total = track.len or 10  # avoid div0
+        slot = ux(.060)/ total # 60%
+
+        pygame.draw.rect(screen,(10,10,10),( marginx-ux(10), marginy-uy(10), (total*slot)+ux(20), uy(110) ) )
+        pygame.draw.rect(screen,(0,255,0), ( marginx, marginy, track.pos*slot, uy(90)) )
+
+    # wait until zip mount + overlayfs is complete
+    while not track.ready:
+        pg_bar(track.pos)
+        compose()
+        await asyncio.sleep(.1)
+
+    # fill it up in case it was cached and instant download
+    pg_bar(track.len)
+    compose()
+
+
+    # preloader will change dir and prepend it to sys.path
+    platform.run_main(PyConfig, loaderhome= appdir / "assets", loadermain=None)
+
+
+    # wait preloading complete
+    # that includes images and wasm compilation of bundled modules
+    while embed.counter()<0:
+        await asyncio.sleep(.1)
+
+    main = appdir / "assets" / "main.py"
+
+    # start async top level machinery and add a console.
+    await TopLevel_async_handler.start_toplevel(platform.shell, console=window.python.config.debug)
+
+    # now that apk is mounted we have access to font cache
+    # but we need to fill __file__ that is not yet set
+    __import__(__name__).__file__ = str(main)
+
+
+    # now make a prompt
+    fnt = pygame.sysfont.SysFont("freesans",  uy(80) )
+
+    def ui_callback(pkg, error=None):
+        nonlocal fnt
+        if error:
+            prompt = fnt.render(f"{error}", True, "black")
+        else:
+            prompt = fnt.render(f"Setting [{pkg}] up", True, "black")
+        pg_bar(track.len)
+        screen.blit(prompt, ( marginx+ ux(80), marginy - uy(10) ) )
+        compose()
+
+    # test/wait if user media interaction required
+    if not platform.window.MM.UME:
+
+        # now make a prompt
+        fnt = pygame.sysfont.SysFont("freesans",  uy(80) )
+        prompt = fnt.render("Ready to start !", True, "blue")
+        pg_bar(track.len)
+        screen.blit(prompt, ( marginx+ ux(80), marginy - uy(10) ) )
+        compose()
+        print("""
+        * Waiting for media user engagement : please click/touch page *
+    """)
+        while not platform.window.MM.UME:
+            await asyncio.sleep(.1)
+
+    # cleanup
+    screen.fill( (0,0,0,0) )
+    pygame.display.flip()
+
+    await shell.runpy(main, callback=ui_callback)
+
+
+
+import asyncio
+
+asyncio.run( custom_site() )
+
+
+
+
+
+
+
+
+
+
+
+
+# BEGIN BLOCK
+#
+# now this is the html part you can (and should) customize
+# It is not mandatory : pygame-script when it reads the first line (also called
+# shebang ) of above code create absolute minimal widget set
+# required for running with default rules
+#
+# do not alter that comment block it is separating python code from html code
+# =============================================================================
+# --></script><head><!--
+//=============================================================================
+//
+//
+//
+//
+//
+//
+//
+
+    {%- if cookiecutter.comment != "" -%}
+{{cookiecutter.comment}}
+    {% endif %}
+
+--><script type="application/javascript">
+// END BLOCK
+
+
+
+// this dict is available under PyConfig.config from __main__
+
+config = {
+    xtermjs : "1" ,
+    _sdl2 : "canvas",
+    user_canvas : 0,
+    user_canvas_managed : 0,
+    ume_block : 1,
+    can_close : 0,
+    archive : "math_bird",
+    gui_debug : 3,
+    cdn : "https://pygame-web.github.io/archives/0.9/",
+    autorun : 0,
+    PYBUILD : "3.12"
+}
+
+</script>
+
+    <title>math_bird</title>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="height=device-height, initial-scale=1.0">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes"/>
+
+    <link rel="prefetch" href="https://pygame-web.github.io/archives/0.9/pythonrc.py">
+    <link rel="prefetch" href="https://pygame-web.github.io/archives/0.9/vt/xterm.js">
+    <link rel="prefetch" href="https://pygame-web.github.io/archives/0.9/vt/xterm-addon-image.js">
+    <link rel="prefetch" href="https://pygame-web.github.io/archives/0.9/vt/xterm-addon-image.js">
+
+
+    <link rel="icon" type="image/png" href="favicon.png" sizes="16x16">
+
+    <style>
+        #status {
+            display: inline-block;
+            vertical-align: top;
+            margin-top: 20px;
+            margin-left: 30px;
+            font-weight: bold;
+            color: rgb(120, 120, 120);
+        }
+
+        #progress {
+            height: 20px;
+            width: 300px;
+        }
+
+        div.emscripten { text-align: center; }
+        div.emscripten_border { border: 1px solid black; }
+        div.thick_border { border: 4px solid black; }
+
+        /* the canvas *must not* have any border or padding, or mouse coords will be wrong */
+        /* average size of droid screen 470dp x 320dp  */
+        canvas.emscripten {
+            border: 0px none;
+            background-color: transparent;
+            width: 100%;
+            height: 100%;
+            z-index: 5;
+
+            padding: 0;
+            margin: 0 auto;
+
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+        }
+
+        body {
+            font-family: arial;
+            margin: 0;
+            padding: none;
+            background-color:powderblue;
+        }
+
+        .topright{
+           position:absolute;
+           top:0px;
+           right:0px;
+        }
+
+        .bottomright {
+            position:absolute;
+            top: 40%;
+            right: 0px;
+        }
+
+        .center {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .trinfo{
+           position:relative;
+           right:0px;
+           border: 1px solid black;
+        }
+
+        .framed{
+           position:relative;
+           top:150px;
+           right:10px;
+           border: 1px solid black;
+        }
+    </style>
+
+    <script src="https://pygame-web.github.io/archives/0.9//browserfs.min.js"></script>
+
+</head>
+
+<body>
+
+    <div id="transfer" align=center>
+<!--        <div class="spinner" id='spinner'></div> -->
+        <div class="emscripten" id="status">Downloading...</div>
+        <div class="emscripten">
+            <progress value="0" max="100" id="progress"></progress>
+        </div>
+    </div>
+
+
+    <canvas class="emscripten" id="canvas"
+width="1px"
+height="1px"
+    oncontextmenu="event.preventDefault()" tabindex=1>
+    </canvas>
+
+    <div id=html></div>
+
+    <div id=crt  class=bottomright >
+
+        <div id="system" hidden>
+            <div class="button-container">
+                <button id="aiostop" disabled>AIO ⏏︎</button>
+                <button id="aiopaused_true" disabled>AIO ■</button>
+                <button id="aiopaused_false" disabled>AIO ▶</button>
+                <button id="pygame_mixer_music_pause" disabled>Music ■</button>
+            </div>
+
+            <div class="button-container">
+                <div id=load_min>min</div>
+                <div id=load_avg>avg</div>
+                <div id=load_max>max</div>
+              <button id="load_rst" disabled>RESET</button>
+            </div>
+
+            <div id="level">(battery level unknown)</div>
+            <div id="stateBattery">(charging state unknown)</div>
+
+        </div>
+
+        <div id=box class="emscripten_border" hidden=true>
+
+            <div id="info" class="trinfo"></div>
+
+            <iframe id="iframe" class="framed" name="iframe"
+width="470px" height="90%"
+allowtransparency="true"
+style="z-index: 10;"
+style="background: #FFFFFF;"
+frameborder="1"
+                allowfullscreen="true"
+                webkitallowfullscreen="true"
+                msallowfullscreen="true"
+                mozallowfullscreen="true"
+                sandbox="allow-same-origin allow-top-navigation allow-scripts allow-pointer-lock"
+                allow="autoplay; fullscreen *; geolocation; microphone; camera; midi; monetization; xr-spatial-tracking; gamepad; gyroscope; accelerometer; xr; cross-origin-isolated"
+                src="https://pygame-web.github.io/archives/0.9/empty.html"
+                scrolling="yes">
+            </iframe>
+        </div>
+
+    </div>
+
+
+    <div id="dlg" hidden>
+        <input type="file" id="dlg_multifile" multiple accept="image/*">
+        <label for="dlg_multifile">Select files</label>
+    </div>
+
+    <div id="pyconsole">
+        <div id="terminal" tabIndex=1 align="left"></div>
+    </div>
+
+    <script type="application/javascript">
+
+    async function custom_onload(debug_hidden) {
+        // this is called before anything python is loaded
+        // make your js customization here
+        console.log(__FILE__, "custom_onload")
+
+        pyconsole.hidden = debug_hidden
+        system.hidden = debug_hidden
+        transfer.hidden = debug_hidden
+        info.hidden = debug_hidden
+        box.hidden =  debug_hidden
+
+    }
+
+    function custom_prerun(){
+        // no python main and no (MEMFS + VFS) yet.
+        console.log(__FILE__, "custom_prerun")
+
+    }
+
+    function custom_postrun(){
+        // python main and no VFS filesystem yet.
+        console.log(__FILE__, "custom_postrun")
+
+        // prevent ff horizontal scroll
+        window.addEventListener("keydown", function(e) {
+            if(["Space","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].indexOf(e.code) > -1) {
+                if (!python.config.debug)
+                    e.preventDefault();
+            }
+        }, false);
+
+    }
+
+    function debug() {
+        // allow to gain access to dev tools from js console
+        // but only on desktop. difficult to reach when in iframe
+        python.config.debug = true
+        custom_onload(false)
+        Module.PyRun_SimpleString("shell.uptime()")
+        window_resize()
+    }
+
+    function info_inline(data){
+        document.getElementById("info").innerHTML = data
+    }
+
+    function info_online(url) {
+        // display info about current APK
+        fetch( url /*, options */)
+            .then((response) => response.text())
+            .then((html) => {
+                info_inline(html);
+        })
+        .catch((error) => {
+            console.warn(error);
+        });
+    }
+
+    function frame_online(url) {
+        window.frames["iframe"].location = url;
+    }
+
+    </script>
+
+<!-- BEGIN mobile-controls -->
+<style>
+  :root {
+    --btn-size: 64px;
+    --gap: 10px;
+    --btn-bg: rgba(0,0,0,0.35);
+    --btn-border: rgba(255,255,255,0.85);
+    --btn-fg: #fff;
+    --btn-active-bg: rgba(255,255,255,0.35);
+    --btn-active-fg: #000;
+    --btn-arrow-bg: rgba(0,0,0,0.25);
+    --pulse-duration: 1.6s;
+  }
+
+  @media (max-width: 820px), (max-height: 680px) {
+    :root { --btn-size: 56px; --gap: 8px; }
+    #mobile-controls .combo-pad { left: 12px; bottom: 12px; }
+    #mobile-controls .fs-float { right: 12px; bottom: 12px; }
+  }
+
+  #mobile-controls.only-fs .combo-pad { display: none !important; }
+  #mobile-controls.only-fs {
+    visibility: visible !important; opacity: 1 !important; display: block !important;
+  }
+
+  #mobile-controls {
+    position: fixed !important; inset: 0 !important; pointer-events: none;
+    z-index: 2147483647 !important; visibility: hidden !important; opacity: 0 !important; display: none !important;
+  }
+
+  #mobile-controls .btn {
+    background: var(--btn-bg); color: var(--btn-fg);
+    border: 2px solid var(--btn-border); border-radius: 12px;
+    font: 600 14px/1 system-ui, sans-serif;
+    width: var(--btn-size); height: var(--btn-size);
+    display: grid; place-items: center; text-align: center;
+    user-select: none; -webkit-user-select: none; touch-action: manipulation;
+    transform-origin: center center;
+    will-change: background, box-shadow, border-color, filter;
+  }
+  #mobile-controls .btn:active { background: var(--btn-active-bg); color: var(--btn-active-fg); }
+
+  /* Pfeil-Dualtasten heller als Standard */
+  #mobile-controls .btn.is-arrow { background: var(--btn-arrow-bg); }
+
+  /* Breath-Animation (Helligkeit) im Flugzustand – hohe Spezifität + !important */
+  #mobile-controls.arrow-active .combo-pad .btn.is-arrow.pulse-on {
+    animation: arrowBreath var(--pulse-duration) ease-in-out infinite !important;
+  }
+  @keyframes arrowBreath {
+    0% {
+      background-color: rgba(255,255,255,0.12);
+      border-color: rgba(255,255,255,0.55);
+      box-shadow: 0 0 0 rgba(255,255,255,0);
+      filter: brightness(1.0);
+    }
+    50% {
+      background-color: rgba(255,255,255,0.28);
+      border-color: rgba(255,255,255,0.98);
+      box-shadow: 0 0 18px rgba(255,255,255,0.45);
+      filter: brightness(1.15);
+    }
+    100% {
+      background-color: rgba(255,255,255,0.12);
+      border-color: rgba(255,255,255,0.55);
+      box-shadow: 0 0 0 rgba(255,255,255,0);
+      filter: brightness(1.0);
+    }
+  }
+
+  /* Kombi-Pad unten links (4x4) */
+  #mobile-controls .combo-pad {
+    position: fixed; left: 16px; bottom: 16px; pointer-events: auto;
+    display: grid; gap: var(--gap);
+    grid-template-columns: repeat(4, var(--btn-size));
+    grid-auto-rows: var(--btn-size);
+    grid-template-areas:
+      "d1 d2 d3 keyF"
+      "d4 d5 d6 keyBack"
+      "d7 d8 d9 keyEnter"
+      "left d0 minus keyEnter";
+  }
+
+  #mobile-controls .combo-pad .btn[data-area="d1"]      { grid-area: d1; }
+  #mobile-controls .combo-pad .btn[data-area="d2"]      { grid-area: d2; }
+  #mobile-controls .combo-pad .btn[data-area="d3"]      { grid-area: d3; }
+  #mobile-controls .combo-pad .btn[data-area="keyF"]    { grid-area: keyF; }
+
+  #mobile-controls .combo-pad .btn[data-area="d4"]      { grid-area: d4; }
+  #mobile-controls .combo-pad .btn[data-area="d5"]      { grid-area: d5; }
+  #mobile-controls .combo-pad .btn[data-area="d6"]      { grid-area: d6; }
+  #mobile-controls .combo-pad .btn[data-area="keyBack"] { grid-area: keyBack; }
+
+  #mobile-controls .combo-pad .btn[data-area="d7"]      { grid-area: d7; }
+  #mobile-controls .combo-pad .btn[data-area="d8"]      { grid-area: d8; }
+  #mobile-controls .combo-pad .btn[data-area="d9"]      { grid-area: d9; }
+
+  #mobile-controls .combo-pad .btn[data-area="keyEnter"] {
+    grid-area: keyEnter; height: calc(var(--btn-size) * 2 + var(--gap));
+  }
+
+  /* Untere Reihe: Links = ArrowLeft (ohne Plus-Eingabe), Mitte = 0/Down, Rechts = −/Right */
+  #mobile-controls .combo-pad .btn[data-area="left"]  { grid-area: left; }
+  #mobile-controls .combo-pad .btn[data-area="d0"]    { grid-area: d0; }
+  #mobile-controls .combo-pad .btn[data-area="minus"] { grid-area: minus; }
+
+  /* Fullscreen unten rechts */
+  #mobile-controls .fs-float {
+    position: fixed; right: 16px; bottom: 16px; z-index: 2147483647; pointer-events: auto;
+  }
+  #mobile-controls .fs-float .btn { width: var(--btn-size); height: var(--btn-size); }
+
+  canvas#canvas {
+    z-index: 5 !important; position: absolute !important; top: 0; left: 0; right: 0; bottom: 0;
+  }
+</style>
+
+<div id="mobile-controls" aria-hidden="true">
+  <div class="combo-pad">
+    <div class="btn" data-area="d1"     data-digit="1">1</div>
+    <div class="btn" data-area="d2"     data-digit="2">2</div>
+    <div class="btn" data-area="d3"     data-digit="3">3</div>
+    <div class="btn" data-area="keyF"   data-key="KeyF">F</div>
+
+    <div class="btn" data-area="d4"     data-digit="4">4</div>
+    <div class="btn" data-area="d5"     data-digit="5">5</div>
+    <div class="btn" data-area="d6"     data-digit="6">6</div>
+    <div class="btn" data-area="keyBack" data-key="Backspace">⌫</div>
+
+    <div class="btn" data-area="d7"     data-digit="7">7</div>
+    <div class="btn is-arrow" data-area="d8"     data-digit="8" data-arrow="ArrowUp">▲ 8</div>
+    <div class="btn" data-area="d9"     data-digit="9">9</div>
+    <div class="btn" data-area="keyEnter" data-key="Enter">⏎</div>
+
+    <!-- Linker Pfeil: KEINE Plus-Eingabe mehr, nur noch ArrowLeft -->
+    <div class="btn is-arrow" data-area="left"  data-arrow="ArrowLeft">◀︎</div>
+    <div class="btn is-arrow" data-area="d0"    data-digit="0" data-arrow="ArrowDown">▼ 0</div>
+    <div class="btn is-arrow" data-area="minus" data-char="−"  data-arrow="ArrowRight">− ▶︎</div>
+  </div>
+
+  <div class="fs-float"><div class="btn" data-action="fs" title="Fullscreen">⤢</div></div>
+</div>
+
+<script>
+  (function () {
+    function ready(fn){
+      if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', fn, { once: true }); }
+      else { fn(); }
+    }
+
+    ready(function initMobileControls() {
+      const root = document.getElementById('mobile-controls');
+      if (!root) return;
+
+      // Bridge
+      function pyCall(expr){
+        let ok = false;
+        try {
+          if (window.python && (window.python.run || window.python.eval)) {
+            (window.python.run || window.python.eval).call(window.python, expr); ok = true;
+          }
+        } catch(e){}
+        if (!ok) try { if (window.pyodide?.runPython) { window.pyodide.runPython(expr); ok = true; } } catch(e){}
+        return ok;
+      }
+
+      function hardMute() {
+        let hit = false;
+        try { hit = pyCall("stop_all_audio()") || hit; } catch(e){}
+        try { hit = pyCall("import pygame; pygame.mixer.stop()") || hit; } catch(e){}
+        try { hit = pyCall("import pygame; [pygame.mixer.Channel(i).stop() for i in range(32)]") || hit; } catch(e){}
+        return hit;
+      }
+
+      root.querySelectorAll('.btn').forEach(b => { b.style.pointerEvents = 'auto'; });
+
+      function getQS(name, def=null){
+        try { const qs = new URLSearchParams(location.search); return qs.has(name) ? qs.get(name) : def; } catch { return def; }
+      }
+      function applyVisible() {
+        root.style.setProperty('z-index', '2147483647', 'important');
+        root.style.setProperty('visibility', 'visible', 'important');
+        root.style.setProperty('opacity', '1', 'important');
+        root.style.setProperty('display', 'block', 'important');
+      }
+
+      function isMobileLike() {
+        const ua = (navigator.userAgent || '').toLowerCase();
+        const isAndroid = /android/.test(ua);
+        const isIOS = /iphone|ipad|ipod/.test(ua);
+        const isMobileUA = /mobile/.test(ua) || isAndroid || isIOS;
+        const hasTouch = (('ontouchstart' in window) || (navigator.maxTouchPoints||0) > 0 || (navigator.msMaxTouchPoints||0) > 0);
+        let pointerCoarse=false, pointerFine=false;
+        try { pointerCoarse = matchMedia('(pointer: coarse)').matches; pointerFine = matchMedia('(pointer: fine)').matches; } catch(e){}
+        const w = Math.min(innerWidth||0, document.documentElement.clientWidth||0);
+        const h = Math.min(innerHeight||0, document.documentElement.clientHeight||0);
+        const shorter = Math.min(w||0, h||0);
+        const smallViewport = shorter > 0 && shorter <= 900;
+        if (isAndroid || isIOS) return true;
+        if (hasTouch && (pointerCoarse || (!pointerFine && smallViewport))) return true;
+        if (isMobileUA && (hasTouch || pointerCoarse || smallViewport)) return true;
+        return false;
+      }
+
+      let mobileSticky = null;
+      function evaluate() {
+        try {
+          const forceMobile = getQS('forceMobile') === '1' || getQS('forceMobile') === 'true';
+          const forceFS     = getQS('forceFS') === '1'     || getQS('forceFS') === 'true';
+          if (mobileSticky === null) mobileSticky = isMobileLike();
+          root.classList.remove('only-fs');
+          if (forceMobile || mobileSticky) { applyVisible(); return; }
+          if (forceFS) { root.classList.add('only-fs'); applyVisible(); return; }
+          root.classList.add('only-fs'); applyVisible();
+        } catch(e) { root.classList.add('only-fs'); applyVisible(); }
+      }
+
+      function canvasOrWindow() { return document.querySelector('canvas') || window; }
+
+      // Key dispatch helpers
+      function dispatchKey(code, type) {
+        const map = {
+          'ArrowUp':'ArrowUp','ArrowDown':'ArrowDown','ArrowLeft':'ArrowLeft','ArrowRight':'ArrowRight',
+          'KeyF':'f','KeyR':'r','KeyQ':'q','Enter':'Enter','Escape':'Escape','Backspace':'Backspace'
+        };
+        const key = map[code] || '';
+        const evt = new KeyboardEvent(type, { key, code, bubbles:true, cancelable:true });
+        canvasOrWindow().dispatchEvent(evt);
+      }
+
+      function dispatchKeyCombo(key, code, opts) {
+        const target = canvasOrWindow();
+        const down = new KeyboardEvent('keydown', { key, code, ...opts, bubbles:true, cancelable:true });
+        const up   = new KeyboardEvent('keyup',   { key, code, ...opts, bubbles:true, cancelable:true });
+        target.dispatchEvent(down);
+        setTimeout(()=>target.dispatchEvent(up), 10);
+      }
+
+      function dispatchDigitOnce(d) { dispatchKeyCombo(String(d), 'Digit'+String(d), {}); }
+
+      // Plus ist entfernt; Minus bleibt für negative Resultate
+      function dispatchCharOnce(ch) {
+        const mapping = {
+          '-': { key: '-', code: 'Minus',  shiftKey: false },
+          '−': { key: '-', code: 'Minus',  shiftKey: false }
+        };
+        const m = mapping[ch]; if (!m) return;
+        dispatchKeyCombo(m.key, m.code, { shiftKey: !!m.shiftKey });
+      }
+
+      function dispatchBackspaceOnce() { dispatchKeyCombo('Backspace', 'Backspace', {}); }
+
+      // Arrow repeat
+      const active = new Map();
+      function startRepeat(code) {
+        if (active.has(code)) return;
+        dispatchKey(code, 'keydown');
+        const itv = setInterval(()=>dispatchKey(code, 'keydown'), 55);
+        active.set(code, itv);
+      }
+      function stopRepeat(code) {
+        const itv = active.get(code);
+        if (itv) clearInterval(itv);
+        active.delete(code);
+        dispatchKey(code, 'keyup');
+      }
+      function stopAllRepeats() {
+        for (const [code, itv] of active.entries()) { clearInterval(itv); dispatchKey(code, 'keyup'); }
+        active.clear();
+      }
+
+      // Bindings
+      function bindComboBtn(el) {
+        const digit = el.getAttribute('data-digit');
+        const ch    = el.getAttribute('data-char');
+        const key   = el.getAttribute('data-key');     // Enter/Backspace/KeyF
+        const arrow = el.getAttribute('data-arrow');   // ArrowUp etc.
+
+        const onDown = (e) => {
+          e.preventDefault();
+          if ((digit || ch || key) && active.size && !arrow) stopAllRepeats();
+
+          if (digit) dispatchDigitOnce(digit);
+          if (ch)    dispatchCharOnce(ch);
+          if (key) {
+            dispatchKey(key, 'keydown');
+            if (key === 'Backspace' || key === 'KeyF') setTimeout(()=>dispatchKey(key,'keyup'), 10);
+          }
+
+          if (arrow) startRepeat(arrow);
+        };
+
+        const onUp = (e) => {
+          e.preventDefault();
+          if (key && key !== 'Backspace' && key !== 'KeyF') dispatchKey(key, 'keyup');
+          if (arrow) stopRepeat(arrow);
+        };
+
+        el.addEventListener('touchstart', onDown, {passive:false});
+        el.addEventListener('touchend',   onUp,   {passive:false});
+        el.addEventListener('touchcancel',onUp,   {passive:false});
+        el.addEventListener('mousedown',  onDown);
+        el.addEventListener('mouseup',    onUp);
+        el.addEventListener('mouseleave', onUp);
+      }
+      root.querySelectorAll('.combo-pad .btn').forEach(bindComboBtn);
+
+      // Fullscreen
+      function isDomFS(){ return !!document.fullscreenElement; }
+      function enterFS(){ try { const p=document.documentElement.requestFullscreen(); p?.then?.(()=>{}).catch?.(()=>{}); } catch(e){} }
+      function exitFS(){ try { const p=document.exitFullscreen(); p?.then?.(()=>{}).catch?.(()=>{}); } catch(e){} }
+      const fsBtn = root.querySelector('.fs-float [data-action="fs"]');
+      if (fsBtn) {
+        const guard = (e)=>{ e.preventDefault(); applyVisible(); try { if (isMobileLike()) root.classList.remove('only-fs'); } catch(e){}; isDomFS()? exitFS() : enterFS(); };
+        fsBtn.addEventListener('click', guard); fsBtn.addEventListener('touchstart', guard, {passive:false});
+      }
+      document.addEventListener('fullscreenchange', ()=>{ try { evaluate(); } catch(e){}; applyVisible(); setTimeout(applyVisible,50); setTimeout(applyVisible,200); }, {passive:true});
+
+      // Canvas-Fokus
+      function focusCanvasSoon() {
+        const c = document.querySelector('canvas');
+        if (!c) return;
+        try { c.focus({preventScroll:true}); } catch(e){}
+      }
+      setTimeout(focusCanvasSoon, 80);
+      setTimeout(focusCanvasSoon, 400);
+      document.addEventListener('pointerdown', focusCanvasSoon, { passive: true });
+
+      // Pfeil-Buttons sammeln für Pulse-Steuerung
+      const arrowBtns = Array.from(root.querySelectorAll('.btn.is-arrow'));
+      function enablePulse() {
+        root.classList.add('arrow-active');
+        arrowBtns.forEach(b => {
+          b.classList.add('pulse-on');
+          b.style.animation = 'arrowBreath var(--pulse-duration) ease-in-out infinite';
+        });
+        void root.offsetHeight; // reflow
+      }
+      function disablePulse() {
+        root.classList.remove('arrow-active');
+        arrowBtns.forEach(b => {
+          b.classList.remove('pulse-on');
+          b.style.animation = '';
+        });
+        stopAllRepeats();
+      }
+
+      // Heuristiken/Fallbacks für Standalone
+      let maybePlay = false;
+      let statePlayAcknowledged = False = false; // harmless alias
+
+      // Fallback: wenn keine State-Message, dann nach 2.2s vorsichtig aktivieren
+      setTimeout(() => {
+        if (!statePlayAcknowledged) {
+          enablePulse();
+          maybePlay = true;
+        }
+      }, 2200);
+
+      // Messages: State + ACK
+      const DEBUG_PULSE = false;
+      window.addEventListener('message', (evt) => {
+        try {
+          const data = evt?.data || {};
+          if (!data || !data.type) return;
+
+          if (data.type === 'game_state' || data.type === 'game_state_self') {
+            const st = data.state || '';
+            if (DEBUG_PULSE) console.log('[mobile-controls] game_state:', st);
+            if (st === 'play') {
+              statePlayAcknowledged = true;
+              maybePlay = true;
+              enablePulse();
+            } else {
+              statePlayAcknowledged = false;
+              maybePlay = false;
+              disablePulse();
+            }
+            return;
+          }
+
+          const reply = (note) => { try { evt.source?.postMessage({ type: 'game_ack', ok: true, note }, '*'); } catch(e){} };
+
+          if (data.type === 'pause_audio') {
+            hardMute(); setTimeout(hardMute, 40); setTimeout(hardMute, 140);
+            setTimeout(() => reply('audio_stopped'), 160);
+            return;
+          }
+          if (data.type === 'close_game' || data.type === 'reset_game') {
+            hardMute();
+            setTimeout(() => { try { pyCall("reset_to_boot()"); } catch(e){}; reply('reset_done'); }, 60);
+            return;
+          }
+        } catch(e){}
+      });
+
+      // Bei Pfeilinteraktion Puls sicher anzeigen (falls State-Heuristik aktiv)
+      function pulseOnArrowInteraction() {
+        if (!statePlayAcknowledged && !maybePlay) return;
+        enablePulse();
+      }
+      arrowBtns.forEach(b => {
+        b.addEventListener('touchstart', pulseOnArrowInteraction, {passive:false});
+        b.addEventListener('mousedown',  pulseOnArrowInteraction);
+      });
+
+      // Init
+      evaluate();
+      window.addEventListener('resize', evaluate, { passive: true });
+      window.addEventListener('orientationchange', evaluate, { passive: true });
+      setTimeout(evaluate, 150); setTimeout(evaluate, 600); setTimeout(evaluate, 1200);
+    });
+  })();
+</script>
+
+<!-- END mobile-controls -->
+
+</body>
+</html>

@@ -5,10 +5,10 @@ Online version: https://dev.betakontext.de/math-bird-game
 You can download main.py to explore the actual state of the game offline f.e. out if Python via IDLE or from command line, bash: python3 main.py
 If you want to test it simulating a mobile device, including the UI of virtual keys etc. download build/web/ folder, which contains favicon.png, index.html and math_bird.apk.
 Start a local server inside the downloaded directory.
-On Linux f.e. bash: python3 -m http.server 8000
-Then open your browser and URL:
-http://127.0.0.1:8000/index.html?forceMobile=1
-The ?forceMobile=1 behind the URL to index, lets the app read the browser as mobile device and triggers the UI layer for mobile devices.
+bash: python3 -m http.server 8000
+Then open http://localhost:8000/ in your browser.
+ctrl+c in the terminal closes the server.
+Try /index-html?forceMobile=1 to read the browser as mobile device and trigger the UI, on JS overlay layer for mobile devices.
 ---------------
 Feel free to build up on that state, integrating further maths and/or game options.
 The project is build with AI assistance (GPT 5) and under MIT licence.

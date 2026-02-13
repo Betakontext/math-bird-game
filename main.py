@@ -1,8 +1,10 @@
 # pygbag: no_keydown_bootstrap
 
 # Math bird - A Pygame Pygbag - simple math game project
-# For further developments and participatiun
-# visit and fork: github.com/betakontext/mathbird
+# For further developments and participations
+# visit and fork: https://github.com/betakontext/mathbird
+# Copyright (c) 2026 Christoph Medicus
+# Licensed under the MIT License
 
 import sys
 import random

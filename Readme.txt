@@ -10,7 +10,8 @@ Then open http://localhost:8000/ in your browser.
 ctrl+c in the terminal closes the server.
 Try /index-html?forceMobile=1 to read the browser as mobile device and trigger the UI, on JS overlay layer for mobile devices.
 ---------------
-Feel free to build up on that state, integrating further maths and/or game options.
-The project is build with AI assistance (GPT 5) and under MIT licence.
-Fork, fly, explore and have fun
-CONTACT: dev@betakontext.de
+
+The project is build with AI assistance and under MIT licence.
+Fork and feel free to build up on that state, integrating further maths and/or game options.
+
+CONTACT: Christoph Medicus | dev@betakontext.de

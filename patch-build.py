@@ -1,6 +1,8 @@
 # Math bird | Mobile UI build patch
 # For further developments visit and fork:
-# github.com/betakontext/mathbird
+# https://github.com/betakontext/mathbird
+# Copyright (c) 2026 Christoph Medicus
+# Licensed under the MIT License
 
 from pathlib import Path
 

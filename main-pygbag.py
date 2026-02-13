@@ -1,5 +1,9 @@
 # pygbag: no_keydown_bootstrap
 
+# Visit and fork: https://github.com/betakontext/mathbird
+# Copyright (c) 2026 Christoph Medicus
+# Licensed under the MIT License
+
 import os
 import sys
 import random

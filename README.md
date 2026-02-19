@@ -1,4 +1,4 @@
-#MATH-BIRD-GAME
+# MATH-BIRD-GAME
 
 A basic maths training game written in Python, using Pygame with Pygbag (Wasm) to integrate Python code into browsers. An additional UI Layer is added on top, using an html wrapper overlay with Java Script for virtual numbpad and buttons, in case a mobile device gets detected.
 ______________

@@ -9,7 +9,7 @@ If you want to test it simulating a mobile device, including the UI of virtual k
 
 Start a local server inside the downloaded directory.
 
-	bash: python3 -m http.server 8000
+	python3 -m http.server 8000
 
 Then open http://localhost:8000/ in your browser.
 ctrl+c in the terminal closes the server.
@@ -18,6 +18,54 @@ Use /index-html?forceMobile=1 to read the browser as mobile device and trigger t
 ______________
 
 Feel free to build up on that state to integrate further maths and-or game options.
+
+Guideline to use pygbag and rebuild the apk f.e. on linux:
+
+Install python3-venv:
+
+	sudo apt update
+	sudo apt install -y python3-venv python3-full
+
+Create venv (in project folder)
+
+	python3 -m venv .venv
+
+Activate venv:
+
+	source .venv/bin/activate
+
+Check:
+
+	python -V
+	pip -V
+
+Install Pygbag in venv:
+
+	pip install -U pip setuptools wheel
+	pip install pygbag
+
+Build:
+
+	python -m pygbag --build .
+
+Overlay: Extension of build/web/index.html vornehmen:
+
+	python patch-build.py
+
+For lokal test	switch to build/web:
+
+	python3 -m http.server 8000
+
+Open in browser:
+
+	http://localhost:8000/
+
+To test the overlay (only visible on mobile devices) on desktop:
+
+		URL… 	?forceMobile=1
+		F.e.:	https://URL/index.html?forceMobile=1
+
+
 Fork and explore.
 
 The project is build with AI assistance and under MIT licence.

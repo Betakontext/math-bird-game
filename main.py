@@ -1,5 +1,4 @@
 # pygbag: no_keydown_bootstrap
-
 # Math bird - A Pygame Pygbag - simple math game project
 # For further developments and participations
 # visit and fork: https://github.com/betakontext/mathbird
@@ -220,6 +219,9 @@ tap_target_active = False
 tap_target = None  # (screen_x, screen_y)
 tap_speed = 9.0    # pixels per frame
 
+# Freeze counting after last required cloud was collected
+count_freeze = False
+
 def stop_all_audio():
     global wind_started, flap_channel
     try:
@@ -252,6 +254,7 @@ def reset_run_state():
     global flap_last, flap_delay_until
     global WIDTH, HEIGHT
     global touch_active, touch_last_pos, tap_target_active, tap_target
+    global count_freeze
 
     # Bird position
     bird_x = 60
@@ -282,6 +285,9 @@ def reset_run_state():
     touch_last_pos = None
     tap_target_active = False
     tap_target = None
+
+    # Freeze off
+    count_freeze = False
 
 def reset_to_boot():
     """
@@ -491,7 +497,7 @@ def draw_cloud(x, y, size, value, c_counter, g_goal, circles,
         )
 
     # Number in cloud while collecting
-    if c_counter < g_goal:
+    if c_counter < g_goal and (not count_freeze):
         font = pygame.font.Font(None, 36)
         val_surf = font.render(str(value), True, RED)
         screen.blit(val_surf, (base_x + size // 16 - val_surf.get_width() // 2,
@@ -591,6 +597,7 @@ async def main():
     global suppress_flap_sound, flap_last, flap_delay_until, chirp_last
     global wind_started, WIDTH, HEIGHT, screen
     global touch_active, touch_last_pos, tap_target_active, tap_target
+    global count_freeze
 
     clock = pygame.time.Clock()
 
@@ -605,10 +612,10 @@ async def main():
                     pygame.quit(); sys.exit()
 
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_q:
-                    # 1) Stop audio
+                    # Stop audio
                     try: stop_all_audio()
                     except Exception: pass
-                    # 2) Ask parent to close
+                    # Ask parent to close
                     try:
                         if is_browser():
                             try: js.window.parent.postMessage({"type": "pause_audio"}, "*")
@@ -619,11 +626,11 @@ async def main():
                             except Exception: pass
                     except Exception:
                         pass
-                    # 3) Clear inputs
+                    # Clear inputs
                     touch_active = False
                     tap_target_active = False
                     tap_target = None
-                    # 4) exit
+                    # Exit
                     try: pygame.time.delay(60)
                     except Exception: pass
                     pygame.quit(); sys.exit()
@@ -741,6 +748,7 @@ async def main():
                         if event.key == pygame.K_RETURN:
                             try:
                                 if int(result_input_buffer.strip()) == cloud_values_sum:
+                                # Correct result
                                     result_text = "Correct!"
                                     if rauschen_sound: rauschen_sound.play()
                                 else:
@@ -793,11 +801,12 @@ async def main():
                 if not swarm_active:
                     bird_x, bird_y = clamp_bird(bird_x, bird_y)
 
-                # Spawner
+                # Spawner (allow decorative clouds after freeze, but no counting/values)
                 if current_time - last_cloud_spawn > cloud_spawn_time:
                     cloud_y = random.randint(0, HEIGHT - 60)
                     cloud_size = random.randint(50, 100)
-                    cloud_value = random.randint(-10, 10) if cloud_counter < goal else 0
+                    value_allowed = (not count_freeze) and (cloud_counter < goal)
+                    cloud_value = random.randint(-10, 10) if value_allowed else 0
 
                     # Precompute cloud circles (4–7) with animation parameters
                     num_circles = random.randint(4, 7)
@@ -833,18 +842,22 @@ async def main():
                     phase     = random.uniform(0.0, math.tau)
                     t0        = pygame.time.get_ticks() / 1000.0
 
+                    # Determine whether we count this as “entered” now
+                    will_count_enter = (not count_freeze) and (cloud_counter < goal)
+
                     clouds.append({
                         'x': WIDTH,
                         'y': cloud_y,
                         'size': cloud_size,
                         'value': cloud_value,
                         'passed': False,
+                        'entered_counted': bool(will_count_enter),  # mark if it contributed to entered-counter
                         'circles': circles,
                         'bob_amp': bob_amp, 'bob_freq': bob_freq,
                         'phase': phase, 't0': t0
                     })
 
-                    if cloud_counter < goal:
+                    if will_count_enter:
                         cloud_entered_counter += 1
                     last_cloud_spawn = current_time
 
@@ -864,18 +877,49 @@ async def main():
                     )
                     rect_cloud = pygame.Rect(cloud['x'], cloud['y'], cloud['size'], 60)
 
-                    if cloud_counter < goal and rect_bird.colliderect(rect_cloud):
-                        cloud_counter += 1
-                        cloud_values_sum += cloud['value']
-                        if zwitscher_sound:
-                            now = pygame.time.get_ticks()
-                            if (now - chirp_last) >= chirp_min_interval:
-                                zwitscher_sound.play()
-                                chirp_last = now
-                        animated_values.append({'x': cloud['x'], 'y': cloud['y'], 'value': cloud['value'],
-                                                'size': 30, 'color': RED, 'time_started': pygame.time.get_ticks()})
-                        scatter_cloud(cloud['x'], cloud['y'])
-                        clouds.remove(cloud)
+                    # Count only if not frozen
+                    if (not count_freeze) and rect_bird.colliderect(rect_cloud):
+                        if cloud_counter < goal:
+                            cloud_counter += 1
+                            cloud_values_sum += cloud['value']
+                            if zwitscher_sound:
+                                now = pygame.time.get_ticks()
+                                if (now - chirp_last) >= chirp_min_interval:
+                                    zwitscher_sound.play()
+                                    chirp_last = now
+                            animated_values.append({
+                                'x': cloud['x'], 'y': cloud['y'], 'value': cloud['value'],
+                                'size': 30, 'color': RED, 'time_started': pygame.time.get_ticks()
+                            })
+                            scatter_cloud(cloud['x'], cloud['y'])
+
+                            # IMPORTANT: delete just now the hit cloud,
+                            # for that it not falls into the substraction
+                            clouds.remove(cloud)
+
+                            # Reached the goal? Freeze and retro-correct now on the cleaned list
+                            if cloud_counter >= goal and not count_freeze:
+                                count_freeze = True
+
+                                bird_draw_x = bird_x + BIRD_DRAW_OFFSET_X
+                                # To be more strict use:    bird_front_x = bird_draw_x + bird_width
+                                subtract_count = 0
+                                for c in clouds:
+                                    if c.get('entered_counted'):
+                                        cloud_right = c['x'] + c['size']
+                                        if cloud_right >= bird_draw_x:
+                                            subtract_count += 1
+                                            c['entered_counted'] = False
+                                if subtract_count:
+                                    cloud_entered_counter = max(0, cloud_entered_counter - subtract_count)
+
+                                if not super_active:
+                                    super_active = True
+                                    super_start_time = pygame.time.get_ticks()
+
+                        else:
+                            clouds.remove(cloud)
+                        continue
 
                 # Transition to super and then swarm
                 if cloud_counter >= goal and not super_active:

@@ -100,7 +100,7 @@ else:
 pygame.display.set_caption("Math Bird")
 notify_state("click_to_start")
 
-# Colors (define before any immediate draw)
+# Colors
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 RED   = (255, 0, 0)
@@ -109,7 +109,7 @@ YELLOW= (255, 255, 0)
 CLOUD_COLOR = (255, 255, 255)
 BIRD_COLOR  = (0, 0, 0)
 
-# Immediate initial frame: static play button (avoid blank blue screen)
+# Immediate initial frame: static play button
 try:
     screen.fill(BLUE)
     radius = 70
@@ -156,11 +156,22 @@ except Exception:
 
 STATE_CLICK_TO_START = "click_to_start"
 STATE_START          = "start"
+STATE_MODE_SELECT    = "mode_select"
 STATE_GOAL_INPUT     = "goal_input"
 STATE_PLAY           = "play"
 STATE_RESULT         = "result"
 
 state = STATE_CLICK_TO_START
+
+# Gameplay mode
+MODE_ADD_SUB = "A"
+MODE_MUL = "M"
+MODE_DIV = "D"
+MODE_MIX = "X"
+mode = MODE_ADD_SUB  # current selected mode (value)
+selected_mode_index = 0  # 0:A, 1:M, 2:D, 3:X for arrow-key navigation
+
+MODE_LIST = [MODE_ADD_SUB, MODE_MUL, MODE_DIV, MODE_MIX]
 
 bird_width = 25
 bird_height = 40
@@ -186,7 +197,7 @@ animated_values = []
 goal = 2
 cloud_counter = 0
 cloud_entered_counter = 0
-cloud_values_sum = 0
+cloud_values_sum = 0.0  # float to support division/mix
 CLOUD_MARGIN = 16  # early offscreen cleanup
 
 super_active = False
@@ -214,13 +225,19 @@ engaged = False
 # Touch / Drag / Tap controls
 touch_active = False
 touch_last_pos = None  # (sx, sy)
-drag_sensitivity = 0.8  # 0.6–1.0 for mobile
+drag_sensitivity = 0.8
 tap_target_active = False
-tap_target = None  # (screen_x, screen_y)
-tap_speed = 9.0    # pixels per frame
+tap_target = None
+tap_speed = 9.0
 
 # Freeze counting after last required cloud was collected
 count_freeze = False
+
+# Signs hidden until first collection
+show_signs = False
+
+# Rects for mouse selection in mode screen
+mode_option_rects = {}  # key: mode char -> pygame.Rect
 
 def stop_all_audio():
     global wind_started, flap_channel
@@ -254,46 +271,42 @@ def reset_run_state():
     global flap_last, flap_delay_until
     global WIDTH, HEIGHT
     global touch_active, touch_last_pos, tap_target_active, tap_target
-    global count_freeze
+    global count_freeze, show_signs
 
-    # Bird position
     bird_x = 60
     bird_y = HEIGHT // 2
     wing_flap = 0
     wing_direction = 4
 
-    # Objects
     clouds.clear()
     animated_values.clear()
 
-    # Counters
     cloud_counter = 0
     cloud_entered_counter = 0
-    cloud_values_sum = 0
 
-    # Effects
+    if mode in (MODE_ADD_SUB, MODE_MIX):
+        cloud_values_sum = 0.0
+    elif mode == MODE_MUL:
+        cloud_values_sum = 1.0
+    elif mode == MODE_DIV:
+        cloud_values_sum = None  # set on first collect
+
     super_active = False
     super_start_time = 0
     swarm_active = False
 
-    # Audio flap timing
     flap_last = 0
     flap_delay_until = pygame.time.get_ticks() + 600
 
-    # Touch state
     touch_active = False
     touch_last_pos = None
     tap_target_active = False
     tap_target = None
 
-    # Freeze off
     count_freeze = False
+    show_signs = False
 
 def reset_to_boot():
-    """
-    Hard return to boot: stop audio, reset run state, clear input buffers,
-    exit fullscreen if needed, go to CLICK_TO_START.
-    """
     global state, goal_input_buffer, result_input_buffer, result_text
     try:
         stop_all_audio()
@@ -303,7 +316,6 @@ def reset_to_boot():
         reset_run_state()
     except Exception:
         pass
-    # leave DOM-FS if active
     try:
         if is_browser() and is_dom_fullscreen():
             exit_dom_fullscreen()
@@ -317,7 +329,6 @@ def reset_to_boot():
     notify_state("click_to_start")
 
 def mark_engaged():
-    # First real user input → unlock audio in browsers
     global engaged, wind_started
     if engaged:
         return
@@ -328,11 +339,9 @@ def mark_engaged():
                 wind_sound.set_volume(0.06)
                 wind_sound.play(-1)
                 wind_started = True
-                print("wind started after engagement")
-        except Exception as e:
-            print("wind start error:", e)
+        except Exception:
+            pass
 
-# Fullscreen toggle
 def toggle_fullscreen():
     global is_fullscreen, screen
     if is_browser():
@@ -367,7 +376,6 @@ if is_browser():
     except Exception:
         pass
 
-    # Stop audio and input on tab hide
     try:
         js.document.addEventListener(
             "visibilitychange",
@@ -380,7 +388,6 @@ if is_browser():
     except Exception:
         pass
 
-    # Stop drag/tap when mouse leaves canvas (prevents stuck drag)
     try:
         c = get_canvas_element()
         if c:
@@ -394,7 +401,6 @@ if is_browser():
     except Exception:
         pass
 
-    # React to parent "close_game" messages
     try:
         def on_message(evt):
             data = evt.data
@@ -421,10 +427,8 @@ if is_browser():
         pass
 
 def get_logic_bounds():
-    # Visible drawing area
     min_x_draw, max_x_draw = 0, WIDTH
     min_y_draw, max_y_draw = 0, HEIGHT
-    # Logic bounds (due to render offsets)
     min_x_logic = min_x_draw - BIRD_DRAW_OFFSET_X
     max_x_logic = max_x_draw - BIRD_DRAW_OFFSET_X - bird_width
     min_y_logic = min_y_draw - BIRD_DRAW_OFFSET_Y
@@ -457,23 +461,17 @@ def draw_raven(x, y, flap_offset=0):
     pygame.draw.circle(screen, (0, 0, 0), (x + 45, y + 15), 2)
     pygame.draw.polygon(screen, YELLOW, [(x + 40, y + 17), (x + 45, y + 15), (x + 40, y + 19)])
 
-def draw_cloud(x, y, size, value, c_counter, g_goal, circles,
+def draw_cloud(x, y, size, op, value, c_counter, g_goal, circles,
                bob_amp=0.0, bob_freq=0.0, phase=0.0, t0=0.0):
-    # Seconds
     t = pygame.time.get_ticks() / 1000.0
     dt = t - t0
-
-    # Vertical bob (no horizontal drift)
     dy = bob_amp * math.sin(2.0 * math.pi * bob_freq * dt + phase)
-
     base_x = x
     base_y = y + int(dy)
 
-    # thresholds for different wobble strength by radius
     large_thr = size * 0.42
     small_thr = size * 0.30
 
-    # Shape wobble: per-circle radius/offset modulation
     for c in circles:
         r0 = c['r0']
         amp_scale = 1.0
@@ -489,17 +487,25 @@ def draw_cloud(x, y, size, value, c_counter, g_goal, circles,
         ox = c['ox'] + c['ox_amp'] * math.sin(2.0 * math.pi * c['ox_freq'] * dt + c['ox_phase'])
         oy = c['oy'] + c['oy_amp'] * math.sin(2.0 * math.pi * c['oy_freq'] * dt + c['oy_phase'])
 
-        pygame.draw.circle(
-            screen,
-            CLOUD_COLOR,
-            (base_x + int(ox), base_y + int(oy)),
-            r
-        )
+        pygame.draw.circle(screen, CLOUD_COLOR, (base_x + int(ox), base_y + int(oy)), r)
 
-    # Number in cloud while collecting
+    # Label while collecting
     if c_counter < g_goal and (not count_freeze):
         font = pygame.font.Font(None, 36)
-        val_surf = font.render(str(value), True, RED)
+        if not show_signs:
+            label = f"{int(value)}"
+        else:
+            if op == "+":
+                label = f"{value:+d}"
+            elif op == "-":
+                label = f"-{abs(int(value))}"
+            elif op == "×":
+                label = f"×{int(value)}"
+            elif op == "÷":
+                label = f"/{int(value)}"
+            else:
+                label = str(int(value))
+        val_surf = font.render(label, True, RED)
         screen.blit(val_surf, (base_x + size // 16 - val_surf.get_width() // 2,
                                base_y + size // 16 - val_surf.get_height() // 2))
 
@@ -515,16 +521,52 @@ def draw_start_screen():
     title_font = pygame.font.Font(None, 54)
     title = title_font.render("MATH BIRD", True, YELLOW)
 
-    nav_text = instructions_font.render("You can use the arrow keys for navigation", True, WHITE)
-    fly_text = instructions_font.render("and F to start or restart your flights.", True, WHITE)
+    nav_text = instructions_font.render("Use arrow keys to navigate the bird.", True, WHITE)
+    start_text = instructions_font.render("Press ENTER to continue.", True, WHITE)
 
     screen.blit(title,    (WIDTH // 2 - title.get_width() // 2, HEIGHT // 2 - title.get_height() // 2 - 160))
     screen.blit(nav_text, (WIDTH // 2 - nav_text.get_width() // 2, HEIGHT // 2 + 100))
-    screen.blit(fly_text, (WIDTH // 2 - fly_text.get_width() // 2, HEIGHT // 2 + 150))
+    screen.blit(start_text,(WIDTH // 2 - start_text.get_width() // 2, HEIGHT // 2 + 150))
+
+def draw_mode_select_screen():
+    # Build rects and draw with highlight for selected mode
+    global mode_option_rects
+    mode_option_rects = {}
+
+    font = pygame.font.Font(None, 44)
+    small = pygame.font.Font(None, 34)
+
+    title = font.render("Choose your calculation type. Press:", True, WHITE)
+    hint = small.render("Then press ENTER to set how many clouds to collect.", True, WHITE)
+
+    y0 = HEIGHT//2 - 160
+    x_center = WIDTH//2
+
+    screen.blit(title, (x_center - title.get_width()//2, y0))
+
+    options = [
+        (MODE_ADD_SUB, "A for additions and subtractions"),
+        (MODE_MUL,     "M for multiplications"),
+        (MODE_DIV,     "D for divisions"),
+        (MODE_MIX,     "X to mix all calculation types"),
+    ]
+
+    # Determine highlight color per line
+    for i, (m, text) in enumerate(options):
+        is_selected = (MODE_LIST[selected_mode_index] == m)
+        color = WHITE if is_selected else YELLOW
+        surf = small.render(text, True, color)
+        y = y0 + 60 + i*40
+        rect = surf.get_rect()
+        rect.topleft = (x_center - surf.get_width()//2, y)
+        screen.blit(surf, rect.topleft)
+        mode_option_rects[m] = rect
+
+    screen.blit(hint, (x_center - hint.get_width()//2, y0 + 60 + len(options)*40 + 20))
 
 def draw_goal_overlay():
     font = pygame.font.Font(None, 36)
-    prompt_text = "How many calculations do you want to add?"
+    prompt_text = "How many clouds do you want to collect?"
     prompt = font.render(prompt_text, True, WHITE)
     screen.blit(prompt, (WIDTH // 2 - prompt.get_width() // 2, HEIGHT // 2 - 140))
     box_w, box_h = 240, 48
@@ -534,6 +576,13 @@ def draw_goal_overlay():
     screen.blit(txt, (box.x + 10, box.y + (box_h - txt.get_height())//2))
     hint = pygame.font.Font(None, 28).render("Type a number and ENTER.", True, WHITE)
     screen.blit(hint, (WIDTH // 2 - hint.get_width() // 2, HEIGHT // 2 + 40))
+
+def format_result_value(v):
+    if v is None:
+        return ""
+    if abs(v - int(round(v))) < 1e-9:
+        return str(int(round(v)))
+    return f"{v:.3f}"
 
 def draw_result_overlay():
     if cloud_entered_counter == goal:
@@ -556,7 +605,7 @@ def draw_result_overlay():
     promt = promt_font.render(promt_text, True, WHITE)
     screen.blit(promt, (WIDTH // 2 - promt.get_width() // 2, HEIGHT // 2 - 120))
     font = pygame.font.Font(None, 36)
-    box_w, box_h = 240, 48
+    box_w, box_h = 300, 48
     box = pygame.Rect((WIDTH - box_w)//2, HEIGHT//2 - 60, box_w, box_h)
     pygame.draw.rect(screen, BLACK, box, 2)
     txt = font.render(result_input_buffer, True, WHITE)
@@ -588,8 +637,91 @@ def play_button_rect(center):
     size = 200
     return pygame.Rect(cx - size//2, cy - size//2, size, size)
 
+def pick_cloud_op_and_value():
+    if mode == MODE_ADD_SUB:
+        v = random.randint(-10, 10)
+        while v == 0:
+            v = random.randint(-10, 10)
+        if v >= 0:
+            return ("+", v)
+        else:
+            return ("-", abs(v))
+    elif mode == MODE_MUL:
+        v = random.randint(1, 9)
+        return ("×", v)
+    elif mode == MODE_DIV:
+        v = random.randint(2, 9)
+        return ("÷", v)
+    elif mode == MODE_MIX:
+        ops = ["+", "-", "×", "÷"]
+        op = random.choice(ops)
+        if op == "+":
+            v = random.randint(1, 10)
+        elif op == "-":
+            v = random.randint(1, 10)
+        elif op == "×":
+            v = random.randint(1, 9)
+        else:
+            v = random.randint(2, 9)
+        return (op, v)
+    return ("+", random.randint(1, 9))
+
+def apply_op_to_sum(current, op, val):
+    if mode == MODE_DIV:
+        if current is None:
+            if op in ["+", "-"]:
+                return float(val if op == "+" else -val)
+            elif op == "×":
+                return float(val)
+            elif op == "÷":
+                return float(val)
+        else:
+            if op == "+":
+                return current + val
+            if op == "-":
+                return current - val
+            if op == "×":
+                return current * val
+            if op == "÷":
+                return current / val
+        return current
+
+    if mode == MODE_MUL:
+        if op == "×":
+            return current * val
+        if op == "+":
+            return current + val
+        if op == "-":
+            return current - val
+        if op == "÷":
+            return current / val
+        return current
+
+    if op == "+":
+        return current + val
+    if op == "-":
+        return current - val
+    if op == "×":
+        return current * val
+    if op == "÷":
+        return current / val
+    return current
+
+def check_user_result(user_text, target_value):
+    try:
+        if "." in user_text or "," in user_text:
+            user_text = user_text.replace(",", ".")
+            u = float(user_text)
+        else:
+            u = int(user_text)
+            u = float(u)
+    except Exception:
+        return False
+    tol = 1e-3
+    return abs(u - float(target_value)) <= tol
+
 async def main():
-    global state
+    global state, mode, selected_mode_index
     global bird_x, bird_y, wing_flap, wing_direction
     global last_cloud_spawn, cloud_counter, cloud_entered_counter, cloud_values_sum
     global super_active, super_start_time, swarm_active
@@ -597,7 +729,7 @@ async def main():
     global suppress_flap_sound, flap_last, flap_delay_until, chirp_last
     global wind_started, WIDTH, HEIGHT, screen
     global touch_active, touch_last_pos, tap_target_active, tap_target
-    global count_freeze
+    global count_freeze, show_signs
 
     clock = pygame.time.Clock()
 
@@ -612,10 +744,8 @@ async def main():
                     pygame.quit(); sys.exit()
 
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_q:
-                    # Stop audio
                     try: stop_all_audio()
                     except Exception: pass
-                    # Ask parent to close
                     try:
                         if is_browser():
                             try: js.window.parent.postMessage({"type": "pause_audio"}, "*")
@@ -626,16 +756,13 @@ async def main():
                             except Exception: pass
                     except Exception:
                         pass
-                    # Clear inputs
                     touch_active = False
                     tap_target_active = False
                     tap_target = None
-                    # Exit
                     try: pygame.time.delay(60)
                     except Exception: pass
                     pygame.quit(); sys.exit()
 
-                # Desktop resizing
                 if event.type == pygame.VIDEORESIZE and not is_browser():
                     WIDTH, HEIGHT = event.w, event.h
                     screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
@@ -658,7 +785,14 @@ async def main():
                             state = STATE_START
                             notify_state("start")
                             continue
-                    # Touch begin
+                    if state == STATE_MODE_SELECT:
+                        # Click-to-select on a line
+                        mx, my = event.pos
+                        for m, rect in mode_option_rects.items():
+                            if rect.collidepoint(mx, my):
+                                selected_mode_index = MODE_LIST.index(m)
+                                mode = MODE_LIST[selected_mode_index]
+                                break
                     if state == STATE_PLAY:
                         if swarm_active:
                             touch_active = False
@@ -666,10 +800,9 @@ async def main():
                         else:
                             touch_active = True
                             touch_last_pos = event.pos
-                            tap_target_active = True   # set False if you want Drag-only
+                            tap_target_active = True
                             tap_target = event.pos
 
-                # Touch drag
                 if event.type == pygame.MOUSEMOTION and touch_active and state == STATE_PLAY:
                     if swarm_active:
                         touch_active = False
@@ -693,13 +826,13 @@ async def main():
 
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
-                        if state in (STATE_PLAY, STATE_RESULT):
+                        if state in (STATE_PLAY, STATE_RESULT, STATE_GOAL_INPUT, STATE_MODE_SELECT):
                             reset_run_state()
-                            state = STATE_GOAL_INPUT
+                            state = STATE_MODE_SELECT
                             goal_input_buffer = ""
                             result_input_buffer = ""
                             result_text = ""
-                            notify_state("goal_input")
+                            notify_state("mode_select")
                             continue
 
                     if state == STATE_CLICK_TO_START:
@@ -709,10 +842,29 @@ async def main():
                             continue
 
                     if state == STATE_START:
-                        if event.key == pygame.K_f:
-                            suppress_flap_sound = True
-                            wing_flap = 0
-                            wing_direction = 4
+                        if event.key == pygame.K_RETURN:
+                            state = STATE_MODE_SELECT
+                            notify_state("mode_select")
+
+                    elif state == STATE_MODE_SELECT:
+                        # Direct letter selection
+                        if event.key == pygame.K_a:
+                            selected_mode_index = 0; mode = MODE_LIST[selected_mode_index]
+                        elif event.key == pygame.K_m:
+                            selected_mode_index = 1; mode = MODE_LIST[selected_mode_index]
+                        elif event.key == pygame.K_d:
+                            selected_mode_index = 2; mode = MODE_LIST[selected_mode_index]
+                        elif event.key == pygame.K_x:
+                            selected_mode_index = 3; mode = MODE_LIST[selected_mode_index]
+                        # Arrow navigation
+                        elif event.key in (pygame.K_DOWN, pygame.K_RIGHT):
+                            selected_mode_index = (selected_mode_index + 1) % len(MODE_LIST)
+                            mode = MODE_LIST[selected_mode_index]
+                        elif event.key in (pygame.K_UP, pygame.K_LEFT):
+                            selected_mode_index = (selected_mode_index - 1) % len(MODE_LIST)
+                            mode = MODE_LIST[selected_mode_index]
+                        # Confirm
+                        elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                             state = STATE_GOAL_INPUT
                             notify_state("goal_input")
 
@@ -723,7 +875,6 @@ async def main():
                             except Exception:
                                 val = goal
                             goal = max(1, val)
-                            # Start run
                             reset_run_state()
                             last_cloud_spawn = pygame.time.get_ticks()
                             suppress_flap_sound = False
@@ -747,12 +898,13 @@ async def main():
                     elif state == STATE_RESULT:
                         if event.key == pygame.K_RETURN:
                             try:
-                                if int(result_input_buffer.strip()) == cloud_values_sum:
-                                # Correct result
+                                ok = check_user_result(result_input_buffer.strip(), cloud_values_sum)
+                                if ok:
                                     result_text = "Correct!"
                                     if rauschen_sound: rauschen_sound.play()
                                 else:
-                                    result_text = f"Sorry! {cloud_values_sum} is the correct result"
+                                    target_str = format_result_value(cloud_values_sum)
+                                    result_text = f"Sorry! {target_str} is the correct result"
                                     if wrong_sound: wrong_sound.play()
                             except Exception:
                                 result_text = "Invalid input. Please enter a number."
@@ -761,25 +913,23 @@ async def main():
                             result_input_buffer = result_input_buffer[:-1]
                         elif event.key in (pygame.K_f, pygame.K_SPACE):
                             reset_run_state()
-                            state = STATE_GOAL_INPUT
+                            state = STATE_MODE_SELECT
                             goal_input_buffer = ""
                             result_input_buffer = ""
                             result_text = ""
-                            notify_state("goal_input")
+                            notify_state("mode_select")
                         else:
-                            if len(result_input_buffer) < 10 and event.unicode.isprintable():
+                            if len(result_input_buffer) < 20 and event.unicode.isprintable():
                                 result_input_buffer += event.unicode
 
             keys = pygame.key.get_pressed()
 
             if state == STATE_PLAY:
-                # Keyboard movement still allowed
                 if keys[pygame.K_UP]:    bird_y -= bird_speed
                 if keys[pygame.K_DOWN]:  bird_y += bird_speed
                 if keys[pygame.K_LEFT]:  bird_x -= bird_speed
                 if keys[pygame.K_RIGHT]: bird_x += bird_speed
 
-                # Tap-to-target smooth follow
                 if tap_target_active and tap_target is not None:
                     bird_screen_x = bird_x + BIRD_DRAW_OFFSET_X
                     bird_screen_y = bird_y + BIRD_DRAW_OFFSET_Y
@@ -797,38 +947,36 @@ async def main():
                     else:
                         tap_target_active = False
 
-                # Clamp only when not in swarm flight
                 if not swarm_active:
                     bird_x, bird_y = clamp_bird(bird_x, bird_y)
 
-                # Spawner (allow decorative clouds after freeze, but no counting/values)
+                # Spawner
                 if current_time - last_cloud_spawn > cloud_spawn_time:
                     cloud_y = random.randint(0, HEIGHT - 60)
                     cloud_size = random.randint(50, 100)
-                    value_allowed = (not count_freeze) and (cloud_counter < goal)
-                    cloud_value = random.randint(-10, 10) if value_allowed else 0
 
-                    # Precompute cloud circles (4–7) with animation parameters
+                    if (not count_freeze) and (cloud_counter < goal):
+                        op, v = pick_cloud_op_and_value()
+                    else:
+                        op, v = ("+", 0)
+
+                    # Precompute cloud circles (4–7)
                     num_circles = random.randint(4, 7)
                     circles = []
                     for _ in range(num_circles):
                         radius = random.randint(cloud_size // 4, cloud_size // 2)
                         offset_x = random.randint(-cloud_size // 4, cloud_size // 4)
                         offset_y = random.randint(-cloud_size // 4, cloud_size // 4)
-
-                        # stronger but organic wobble
                         size_factor = max(0.6, min(1.0, (cloud_size / max(1, radius)) * 0.25))
                         r_amp   = max(1.0, radius * random.uniform(0.20, 0.35) * size_factor)
                         r_freq  = random.uniform(0.12, 0.30)
                         r_phase = random.uniform(0.0, math.tau)
-
                         ox_amp   = random.uniform(2.0, 5.0) * size_factor
                         oy_amp   = random.uniform(2.0, 5.0) * size_factor
                         ox_freq  = random.uniform(0.08, 0.22)
                         oy_freq  = random.uniform(0.10, 0.26)
                         ox_phase = random.uniform(0.0, math.tau)
                         oy_phase = random.uniform(0.0, math.tau)
-
                         circles.append({
                             'ox': offset_x, 'oy': offset_y,
                             'r0': radius,
@@ -842,16 +990,16 @@ async def main():
                     phase     = random.uniform(0.0, math.tau)
                     t0        = pygame.time.get_ticks() / 1000.0
 
-                    # Determine whether we count this as “entered” now
                     will_count_enter = (not count_freeze) and (cloud_counter < goal)
 
                     clouds.append({
                         'x': WIDTH,
                         'y': cloud_y,
                         'size': cloud_size,
-                        'value': cloud_value,
+                        'op': op,
+                        'value': v,
                         'passed': False,
-                        'entered_counted': bool(will_count_enter),  # mark if it contributed to entered-counter
+                        'entered_counted': bool(will_count_enter),
                         'circles': circles,
                         'bob_amp': bob_amp, 'bob_freq': bob_freq,
                         'phase': phase, 't0': t0
@@ -877,32 +1025,34 @@ async def main():
                     )
                     rect_cloud = pygame.Rect(cloud['x'], cloud['y'], cloud['size'], 60)
 
-                    # Count only if not frozen
                     if (not count_freeze) and rect_bird.colliderect(rect_cloud):
                         if cloud_counter < goal:
                             cloud_counter += 1
-                            cloud_values_sum += cloud['value']
+
+                            if not show_signs:
+                                show_signs = True
+
+                            op = cloud.get('op', "+")
+                            val = int(cloud.get('value', 0))
+                            cloud_values_sum = apply_op_to_sum(cloud_values_sum, op, val)
+
                             if zwitscher_sound:
                                 now = pygame.time.get_ticks()
                                 if (now - chirp_last) >= chirp_min_interval:
                                     zwitscher_sound.play()
                                     chirp_last = now
                             animated_values.append({
-                                'x': cloud['x'], 'y': cloud['y'], 'value': cloud['value'],
+                                'x': cloud['x'], 'y': cloud['y'], 'value': val,
                                 'size': 30, 'color': RED, 'time_started': pygame.time.get_ticks()
                             })
                             scatter_cloud(cloud['x'], cloud['y'])
 
-                            # IMPORTANT: delete just now the hit cloud,
-                            # for that it not falls into the substraction
                             clouds.remove(cloud)
 
-                            # Reached the goal? Freeze and retro-correct now on the cleaned list
                             if cloud_counter >= goal and not count_freeze:
                                 count_freeze = True
 
                                 bird_draw_x = bird_x + BIRD_DRAW_OFFSET_X
-                                # To be more strict use:    bird_front_x = bird_draw_x + bird_width
                                 subtract_count = 0
                                 for c in clouds:
                                     if c.get('entered_counted'):
@@ -916,17 +1066,14 @@ async def main():
                                 if not super_active:
                                     super_active = True
                                     super_start_time = pygame.time.get_ticks()
-
                         else:
                             clouds.remove(cloud)
                         continue
 
-                # Transition to super and then swarm
                 if cloud_counter >= goal and not super_active:
                     super_active = True
                     super_start_time = pygame.time.get_ticks()
 
-                # Failsafe
                 if super_active and (current_time - super_start_time) > (super_duration + 5000):
                     super_active = False
                     swarm_active = True
@@ -935,21 +1082,17 @@ async def main():
                     if current_time - super_start_time >= super_duration:
                         super_active = False
                         swarm_active = True
-                        # End inputs
                         tap_target_active = False
                         tap_target = None
                         touch_active = False
                         touch_last_pos = None
 
                 if swarm_active:
-                    # No inputs / clamps
                     touch_active = False
                     tap_target_active = False
                     tap_target = None
 
-                    # Guaranteed fly-out to the right
                     bird_x += max(swarm_speed, 3.0)
-                    # Check based on screen position (incl. offset)
                     bird_screen_x = bird_x + BIRD_DRAW_OFFSET_X
                     if bird_screen_x > (WIDTH + 80):
                         bird_x = WIDTH + 80 - BIRD_DRAW_OFFSET_X
@@ -987,7 +1130,19 @@ async def main():
                 screen.blit(hint, (WIDTH // 2 - hint.get_width() // 2, HEIGHT // 2 + 120))
                 pygame.display.flip(); pygame.time.Clock().tick(60); await asyncio.sleep(0); continue
 
-            if state in (STATE_START, STATE_GOAL_INPUT, STATE_PLAY, STATE_RESULT):
+            if state == STATE_START:
+                suppress_flap_sound = True
+                draw_start_screen()
+
+            elif state == STATE_MODE_SELECT:
+                suppress_flap_sound = True
+                draw_mode_select_screen()
+
+            elif state == STATE_GOAL_INPUT:
+                suppress_flap_sound = True
+                draw_goal_overlay()
+
+            elif state in (STATE_PLAY, STATE_RESULT):
                 for av in list(animated_values):
                     elapsed = (current_time - av['time_started']) / 1000
                     if elapsed < 1:
@@ -1003,12 +1158,13 @@ async def main():
                     else:
                         animated_values.remove(av)
 
-                # Draw clouds (clip)
+                # Draw clouds
                 for cloud in clouds:
                     if cloud['x'] > WIDTH or (cloud['x'] + cloud['size']) < 0:
                         continue
                     draw_cloud(
                         cloud['x'], cloud['y'], cloud['size'],
+                        cloud.get('op', "+"),
                         cloud.get('value', 0),
                         cloud_counter, goal,
                         cloud['circles'],
@@ -1030,13 +1186,7 @@ async def main():
                         flap_offset = random.uniform(-15, 15)
                         draw_raven(WIDTH - scatter_x, scatter_y, flap_offset)
 
-            if state == STATE_START:
-                suppress_flap_sound = True
-                draw_start_screen()
-            elif state == STATE_GOAL_INPUT:
-                suppress_flap_sound = True
-                draw_goal_overlay()
-            elif state == STATE_RESULT:
+            if state == STATE_RESULT:
                 suppress_flap_sound = True
                 draw_result_overlay()
 
@@ -1045,7 +1195,6 @@ async def main():
             await asyncio.sleep(0)
 
     except Exception as e:
-        # Fallback error screen
         try:
             screen.fill((20, 20, 20))
             font = pygame.font.Font(None, 28)

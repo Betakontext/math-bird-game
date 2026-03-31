@@ -106,6 +106,7 @@ BLACK = (0, 0, 0)
 RED   = (255, 0, 0)
 BLUE  = (135, 206, 250)
 YELLOW= (255, 255, 0)
+GREEN = (50, 220, 120)
 CLOUD_COLOR = (255, 255, 255)
 BIRD_COLOR  = (0, 0, 0)
 
@@ -160,6 +161,7 @@ STATE_MODE_SELECT    = "mode_select"
 STATE_GOAL_INPUT     = "goal_input"
 STATE_PLAY           = "play"
 STATE_RESULT         = "result"
+STATE_NAME_SAVE      = "name_save"
 
 state = STATE_CLICK_TO_START
 
@@ -168,9 +170,8 @@ MODE_ADD_SUB = "A"
 MODE_MUL = "M"
 MODE_DIV = "D"
 MODE_MIX = "X"
-mode = MODE_ADD_SUB  # current selected mode (value)
-selected_mode_index = 0  # 0:A, 1:M, 2:D, 3:X for arrow-key navigation
-
+mode = MODE_ADD_SUB
+selected_mode_index = 0
 MODE_LIST = [MODE_ADD_SUB, MODE_MUL, MODE_DIV, MODE_MIX]
 
 bird_width = 25
@@ -192,13 +193,14 @@ cloud_speed = 5
 cloud_spawn_time = 2000
 last_cloud_spawn = 0
 
+# animated popups: entries with {'x','y','text','size','color','time_started'}
 animated_values = []
 
 goal = 2
 cloud_counter = 0
 cloud_entered_counter = 0
-cloud_values_sum = 0.0  # float to support division/mix
-CLOUD_MARGIN = 16  # early offscreen cleanup
+cloud_values_sum = 0.0
+CLOUD_MARGIN = 16
 
 super_active = False
 super_start_time = 0
@@ -224,7 +226,7 @@ engaged = False
 
 # Touch / Drag / Tap controls
 touch_active = False
-touch_last_pos = None  # (sx, sy)
+touch_last_pos = None
 drag_sensitivity = 0.8
 tap_target_active = False
 tap_target = None
@@ -237,7 +239,30 @@ count_freeze = False
 show_signs = False
 
 # Rects for mouse selection in mode screen
-mode_option_rects = {}  # key: mode char -> pygame.Rect
+mode_option_rects = {}
+
+# Score related and staged popup timers
+flight_bonus = 0
+total_score_popup_spawned = False
+result_screen_opened_at = 0
+bonus_popup_shown = False
+result_popup_shown = False
+result_popup_shown_at = 0
+
+# Wrong attempt tracking
+wrong_answer_given = False
+
+# Name/Score saving
+name_input = ""
+scores = []  # [{'name','mode','calc','bonus','total'}]
+rank_show_until = 0  # show Name & Save ranking until (ms). 0 means not scheduled.
+name_saved_once = False  # ensure single-shot save per result
+
+# Auto timings after ENTER on result screen
+auto_total_due_at = 0      # ENTER + 1s
+auto_name_due_at = 0       # ENTER + 3s
+auto_total_hide_at = 0     # ENTER + 3s (so visible 2s)
+total_popup_active = False
 
 def stop_all_audio():
     global wind_started, flap_channel
@@ -272,6 +297,10 @@ def reset_run_state():
     global WIDTH, HEIGHT
     global touch_active, touch_last_pos, tap_target_active, tap_target
     global count_freeze, show_signs
+    global flight_bonus, total_score_popup_spawned
+    global result_screen_opened_at, bonus_popup_shown, result_popup_shown, result_popup_shown_at
+    global wrong_answer_given, result_input_buffer, result_text, name_input, rank_show_until, name_saved_once
+    global auto_total_due_at, auto_name_due_at, auto_total_hide_at, total_popup_active
 
     bird_x = 60
     bird_y = HEIGHT // 2
@@ -289,7 +318,7 @@ def reset_run_state():
     elif mode == MODE_MUL:
         cloud_values_sum = 1.0
     elif mode == MODE_DIV:
-        cloud_values_sum = None  # set on first collect
+        cloud_values_sum = None
 
     super_active = False
     super_start_time = 0
@@ -306,8 +335,27 @@ def reset_run_state():
     count_freeze = False
     show_signs = False
 
+    flight_bonus = 0
+    total_score_popup_spawned = False
+    result_screen_opened_at = 0
+    bonus_popup_shown = False
+    result_popup_shown = False
+    result_popup_shown_at = 0
+    wrong_answer_given = False
+
+    result_input_buffer = ""
+    result_text = ""
+    name_input = ""
+    rank_show_until = 0
+    name_saved_once = False
+
+    auto_total_due_at = 0
+    auto_name_due_at = 0
+    auto_total_hide_at = 0
+    total_popup_active = False
+
 def reset_to_boot():
-    global state, goal_input_buffer, result_input_buffer, result_text
+    global state, goal_input_buffer, result_input_buffer, result_text, name_input, rank_show_until, name_saved_once
     try:
         stop_all_audio()
     except Exception:
@@ -325,6 +373,9 @@ def reset_to_boot():
     goal_input_buffer = ""
     result_input_buffer = ""
     result_text = ""
+    name_input = ""
+    rank_show_until = 0
+    name_saved_once = False
     state = STATE_CLICK_TO_START
     notify_state("click_to_start")
 
@@ -529,7 +580,6 @@ def draw_start_screen():
     screen.blit(start_text,(WIDTH // 2 - start_text.get_width() // 2, HEIGHT // 2 + 150))
 
 def draw_mode_select_screen():
-    # Build rects and draw with highlight for selected mode
     global mode_option_rects
     mode_option_rects = {}
 
@@ -551,7 +601,6 @@ def draw_mode_select_screen():
         (MODE_MIX,     "X to mix all calculation types"),
     ]
 
-    # Determine highlight color per line
     for i, (m, text) in enumerate(options):
         is_selected = (MODE_LIST[selected_mode_index] == m)
         color = WHITE if is_selected else YELLOW
@@ -601,7 +650,7 @@ def draw_result_overlay():
     counts = counts_font.render(counts_text, True, WHITE)
     screen.blit(counts, (WIDTH // 2 - counts.get_width() // 2, HEIGHT // 2 - 160))
     promt_font = pygame.font.Font(None, 36)
-    promt_text = "What's your result?"
+    promt_text = "What's your result? (press ENTER)"
     promt = promt_font.render(promt_text, True, WHITE)
     screen.blit(promt, (WIDTH // 2 - promt.get_width() // 2, HEIGHT // 2 - 120))
     font = pygame.font.Font(None, 36)
@@ -617,6 +666,54 @@ def draw_result_overlay():
     help2 = font.render("Press Q to exit.", True, WHITE)
     screen.blit(help1, (WIDTH // 2 - help1.get_width() // 2, HEIGHT // 2 + 70))
     screen.blit(help2, (WIDTH // 2 - help2.get_width() // 2, HEIGHT // 2 + 110))
+
+def draw_name_save_overlay(latest_score, top_scores, saved_once, rank_time_left_ms):
+    title_font = pygame.font.Font(None, 54)
+    font = pygame.font.Font(None, 36)
+    small = pygame.font.Font(None, 28)
+
+    title = title_font.render("NAME & SAVE", True, YELLOW)
+    screen.blit(title, (WIDTH//2 - title.get_width()//2, 80))
+
+    # Name input (locked after first save)
+    prompt_text = "Enter your name and press ENTER to save:" if not saved_once else "Saved! Ranking will remain visible."
+    prompt = font.render(prompt_text, True, WHITE)
+    screen.blit(prompt, (WIDTH//2 - prompt.get_width()//2, 160))
+
+    box_w, box_h = 360, 48
+    box = pygame.Rect((WIDTH - box_w)//2, 200, box_w, box_h)
+    pygame.draw.rect(screen, BLACK, box, 2)
+    name_display = name_input if not saved_once else "(locked)"
+    name_txt = font.render(name_display, True, WHITE)
+    screen.blit(name_txt, (box.x + 10, box.y + (box_h - name_txt.get_height())//2))
+
+    if latest_score:
+        calc_str = format_result_value(latest_score['calc'])
+        total_str = format_result_value(latest_score['total'])
+        latest = small.render(f"Last flight — Mode: {latest_score['mode']}  Calc: {calc_str}  Bonus: {int(latest_score['bonus'])}  Total Score: {total_str}", True, WHITE)
+        screen.blit(latest, (WIDTH//2 - latest.get_width()//2, 270))
+
+    y = 320
+    header = font.render("Scores (session):", True, WHITE)
+    screen.blit(header, (WIDTH//2 - header.get_width()//2, y))
+    y += 40
+    for i, s in enumerate(top_scores[:8]):
+        calc_str = format_result_value(s['calc'])
+        total_str = format_result_value(s['total'])
+        line = small.render(f"{i+1}. {s['name']} — Mode {s['mode']} — Calc {calc_str} + Bonus {int(s['bonus'])} = {total_str}", True, YELLOW)
+        screen.blit(line, (WIDTH//2 - line.get_width()//2, y))
+        y += 28
+
+    # Hints: show both timing info and "Press F to fly again"
+    info = "Saving shows the ranking for 10s, then returns to start."
+    if saved_once and rank_time_left_ms > 0:
+        sec_left = max(0, int(math.ceil(rank_time_left_ms / 1000.0)))
+        info = f"Ranking will return to start in {sec_left}s."
+    hint_info = small.render(info, True, WHITE)
+    screen.blit(hint_info, (WIDTH//2 - hint_info.get_width()//2, HEIGHT - 110))
+
+    hint_f = small.render("Press F to fly again.", True, WHITE)
+    screen.blit(hint_f, (WIDTH//2 - hint_f.get_width()//2, HEIGHT - 80))
 
 def play_button_pulse(t, base_r=70, amp=10, speed=1.0):
     return int(base_r + amp * (0.5 + 0.5 * math.sin(2 * math.pi * speed * t)))
@@ -720,6 +817,55 @@ def check_user_result(user_text, target_value):
     tol = 1e-3
     return abs(u - float(target_value)) <= tol
 
+def spawn_bonus_popup(bonus_value):
+    center_x = WIDTH // 2
+    y = HEIGHT // 2 - 250
+    now = pygame.time.get_ticks()
+    animated_values.append({
+        'x': center_x,
+        'y': y,
+        'text': f"+{int(bonus_value)}",
+        'size': 44,
+        'color': (50, 220, 120) if bonus_value > 0 else YELLOW,
+        'time_started': now
+    })
+
+def spawn_result_popup(calc_value):
+    center_x = WIDTH // 2
+    y = HEIGHT // 2 - 50
+    now = pygame.time.get_ticks()
+    if isinstance(calc_value, (int, float)):
+        is_int = abs(calc_value - int(round(calc_value))) < 1e-9
+        txt = f"= {int(round(calc_value))}" if is_int else f"= {calc_value:.2f}"
+    else:
+        txt = f"= {calc_value}"
+    animated_values.append({
+        'x': center_x,
+        'y': y,
+        'text': txt,
+        'size': 44,
+        'color': WHITE,
+        'time_started': now
+    })
+
+def spawn_total_popup(total_value):
+    center_x = WIDTH // 2
+    y = HEIGHT // 2 + 280
+    now = pygame.time.get_ticks()
+    is_int = abs(total_value - int(round(total_value))) < 1e-9
+    txt = f"Total Score: {int(round(total_value))}" if is_int else f"Total Score: {total_value:.2f}"
+    animated_values.append({
+        'x': center_x,
+        'y': y,
+        'text': txt,
+        'size': 48,
+        'color': YELLOW,
+        'time_started': now
+    })
+
+def mode_label(m):
+    return {"A": "Add/Sub", "M": "Mul", "D": "Div", "X": "Mix"}.get(m, m)
+
 async def main():
     global state, mode, selected_mode_index
     global bird_x, bird_y, wing_flap, wing_direction
@@ -730,6 +876,10 @@ async def main():
     global wind_started, WIDTH, HEIGHT, screen
     global touch_active, touch_last_pos, tap_target_active, tap_target
     global count_freeze, show_signs
+    global flight_bonus, total_score_popup_spawned
+    global result_screen_opened_at, bonus_popup_shown, result_popup_shown, result_popup_shown_at
+    global wrong_answer_given, name_input, scores, rank_show_until, name_saved_once
+    global auto_total_due_at, auto_name_due_at, auto_total_hide_at, total_popup_active
 
     clock = pygame.time.Clock()
 
@@ -786,7 +936,6 @@ async def main():
                             notify_state("start")
                             continue
                     if state == STATE_MODE_SELECT:
-                        # Click-to-select on a line
                         mx, my = event.pos
                         for m, rect in mode_option_rects.items():
                             if rect.collidepoint(mx, my):
@@ -826,12 +975,13 @@ async def main():
 
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
-                        if state in (STATE_PLAY, STATE_RESULT, STATE_GOAL_INPUT, STATE_MODE_SELECT):
+                        if state in (STATE_PLAY, STATE_RESULT, STATE_GOAL_INPUT, STATE_MODE_SELECT, STATE_NAME_SAVE):
                             reset_run_state()
                             state = STATE_MODE_SELECT
                             goal_input_buffer = ""
                             result_input_buffer = ""
                             result_text = ""
+                            name_input = ""
                             notify_state("mode_select")
                             continue
 
@@ -847,7 +997,6 @@ async def main():
                             notify_state("mode_select")
 
                     elif state == STATE_MODE_SELECT:
-                        # Direct letter selection
                         if event.key == pygame.K_a:
                             selected_mode_index = 0; mode = MODE_LIST[selected_mode_index]
                         elif event.key == pygame.K_m:
@@ -856,14 +1005,12 @@ async def main():
                             selected_mode_index = 2; mode = MODE_LIST[selected_mode_index]
                         elif event.key == pygame.K_x:
                             selected_mode_index = 3; mode = MODE_LIST[selected_mode_index]
-                        # Arrow navigation
                         elif event.key in (pygame.K_DOWN, pygame.K_RIGHT):
                             selected_mode_index = (selected_mode_index + 1) % len(MODE_LIST)
                             mode = MODE_LIST[selected_mode_index]
                         elif event.key in (pygame.K_UP, pygame.K_LEFT):
                             selected_mode_index = (selected_mode_index - 1) % len(MODE_LIST)
                             mode = MODE_LIST[selected_mode_index]
-                        # Confirm
                         elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                             state = STATE_GOAL_INPUT
                             notify_state("goal_input")
@@ -898,17 +1045,29 @@ async def main():
                     elif state == STATE_RESULT:
                         if event.key == pygame.K_RETURN:
                             try:
-                                ok = check_user_result(result_input_buffer.strip(), cloud_values_sum)
+                                target_calc = cloud_values_sum if cloud_values_sum is not None else 0.0
+                                ok = check_user_result(result_input_buffer.strip(), target_calc)
                                 if ok:
                                     result_text = "Correct!"
                                     if rauschen_sound: rauschen_sound.play()
+                                    if not result_popup_shown:
+                                        spawn_result_popup(target_calc)
+                                        result_popup_shown = True
+                                        result_popup_shown_at = pygame.time.get_ticks()
                                 else:
-                                    target_str = format_result_value(cloud_values_sum)
-                                    result_text = f"Sorry! {target_str} is the correct result"
+                                    wrong_answer_given = True
                                     if wrong_sound: wrong_sound.play()
+                                    result_text = "Try again."
                             except Exception:
                                 result_text = "Invalid input. Please enter a number."
                                 if phaser_sound: phaser_sound.play()
+
+                            # Auto timers: total at +1s (visible 2s), name at +3s
+                            now_ts = pygame.time.get_ticks()
+                            auto_total_due_at = now_ts + 1000
+                            auto_total_hide_at = now_ts + 3000
+                            auto_name_due_at = now_ts + 3000
+
                         elif event.key == pygame.K_BACKSPACE:
                             result_input_buffer = result_input_buffer[:-1]
                         elif event.key in (pygame.K_f, pygame.K_SPACE):
@@ -917,10 +1076,45 @@ async def main():
                             goal_input_buffer = ""
                             result_input_buffer = ""
                             result_text = ""
+                            name_input = ""
                             notify_state("mode_select")
                         else:
                             if len(result_input_buffer) < 20 and event.unicode.isprintable():
                                 result_input_buffer += event.unicode
+
+                    elif state == STATE_NAME_SAVE:
+                        # Allow flight restart anytime with F
+                        if event.key in (pygame.K_f, pygame.K_SPACE):
+                            reset_run_state()
+                            state = STATE_MODE_SELECT
+                            notify_state("mode_select")
+                        elif event.key == pygame.K_RETURN:
+                            # Only allow saving once per result
+                            if not name_saved_once:
+                                calc_val = (cloud_values_sum if cloud_values_sum is not None else 0.0)
+                                calc_part = 0.0 if wrong_answer_given else abs(calc_val)
+                                total_val = calc_part + flight_bonus
+                                entry = {
+                                    'name': name_input.strip() or "Player",
+                                    'mode': mode_label(mode),
+                                    'calc': calc_part,   # store the positive contribution
+                                    'bonus': int(flight_bonus),
+                                    'total': total_val
+                                }
+
+                                scores.append(entry)
+                                scores.sort(key=lambda s: s['total'], reverse=True)
+                                # Lock input and show ranking for 10 seconds
+                                rank_show_until = pygame.time.get_ticks() + 10000
+                                name_saved_once = True
+                                name_input = ""  # visually lock
+                        elif event.key == pygame.K_BACKSPACE:
+                            # Only allow editing before first save
+                            if not name_saved_once:
+                                name_input = name_input[:-1]
+                        else:
+                            if not name_saved_once and len(name_input) < 20 and event.unicode.isprintable():
+                                name_input += event.unicode
 
             keys = pygame.key.get_pressed()
 
@@ -1041,8 +1235,13 @@ async def main():
                                 if (now - chirp_last) >= chirp_min_interval:
                                     zwitscher_sound.play()
                                     chirp_last = now
+                            if op in ["+","-"]:
+                                col_text = f"{val:+d}" if op == "+" else f"-{abs(val)}"
+                            else:
+                                col_text = f"{'×' if op=='×' else '/'}{val}"
                             animated_values.append({
-                                'x': cloud['x'], 'y': cloud['y'], 'value': val,
+                                'x': cloud['x'], 'y': cloud['y'],
+                                'text': col_text,
                                 'size': 30, 'color': RED, 'time_started': pygame.time.get_ticks()
                             })
                             scatter_cloud(cloud['x'], cloud['y'])
@@ -1098,8 +1297,56 @@ async def main():
                         bird_x = WIDTH + 80 - BIRD_DRAW_OFFSET_X
                         result_input_buffer = ""
                         result_text = ""
+
+                        if cloud_entered_counter == goal:
+                            flight_bonus = 100
+                        elif goal < cloud_entered_counter <= goal + 5:
+                            flight_bonus = 50
+                        else:
+                            flight_bonus = 0
+
+                        result_screen_opened_at = pygame.time.get_ticks()
+                        bonus_popup_shown = False
+                        result_popup_shown = False
+                        result_popup_shown_at = 0
+                        total_score_popup_spawned = False
+                        wrong_answer_given = False
+
+                        auto_total_due_at = 0
+                        auto_total_hide_at = 0
+                        auto_name_due_at = 0
+                        total_popup_active = False
+
                         state = STATE_RESULT
                         notify_state("result")
+
+            # Timed staged popups in result screen
+            if state == STATE_RESULT:
+                now = pygame.time.get_ticks()
+                # Bonus popup 3s after result screen opened
+                if not bonus_popup_shown and result_screen_opened_at:
+                    if now - result_screen_opened_at >= 3000:
+                        spawn_bonus_popup(flight_bonus)
+                        bonus_popup_shown = True
+                # Auto total popup due (1s after ENTER), once
+                if (not total_score_popup_spawned) and auto_total_due_at and now >= auto_total_due_at:
+                    raw_calc = (cloud_values_sum if cloud_values_sum is not None else 0.0)
+                    calc_part = 0.0 if wrong_answer_given else abs(raw_calc)
+                    total_value = calc_part + flight_bonus
+                    spawn_total_popup(total_value)
+                    total_score_popup_spawned = True
+                    total_popup_active = True
+                # Hide total popup after 2s visibility (ENTER + 3s)
+                if total_popup_active and auto_total_hide_at and now >= auto_total_hide_at:
+                    for av in animated_values[:]:
+                        if isinstance(av.get('text'), str) and av['text'].startswith("Total:"):
+                            animated_values.remove(av)
+                    total_popup_active = False
+                # Auto switch to name screen at ENTER + 3s
+                if auto_name_due_at and now >= auto_name_due_at:
+                    state = STATE_NAME_SAVE
+                    notify_state("name_save")
+                    auto_name_due_at = 0
 
             # Wing anim + sound
             wing_flap += wing_direction * wing_flap_rate
@@ -1142,37 +1389,40 @@ async def main():
                 suppress_flap_sound = True
                 draw_goal_overlay()
 
-            elif state in (STATE_PLAY, STATE_RESULT):
+            elif state in (STATE_PLAY, STATE_RESULT, STATE_NAME_SAVE):
+                # Render animated popups
                 for av in list(animated_values):
-                    elapsed = (current_time - av['time_started']) / 1000
-                    if elapsed < 1:
-                        av['y'] -= -10 * elapsed
-                        av['size'] = 30 + (90 * elapsed)
-                        r = RED[0] + (YELLOW[0] - RED[0]) * elapsed
-                        g = RED[1] + (YELLOW[1] - RED[1]) * elapsed
-                        b = RED[2] + (YELLOW[2] - RED[2]) * elapsed
-                        av['color'] = (int(r), int(g), int(b))
-                        font = pygame.font.Font(None, int(av['size']))
-                        value_text = font.render(str(av['value']), True, av['color'])
-                        screen.blit(value_text, (av['x'] - value_text.get_width() // 2, av['y'] - value_text.get_height() // 2))
+                    elapsed = (current_time - av['time_started']) / 1000.0
+                    if elapsed < 1.2:
+                        y_offset = -10 * elapsed
+                        size_now = int(av.get('size', 30) + 60 * elapsed)
+                        color = av.get('color', YELLOW)
+                        font = pygame.font.Font(None, size_now)
+                        text = av.get('text')
+                        if text is None:
+                            text = str(av.get('value', ''))
+                        surf = font.render(text, True, color)
+                        screen.blit(surf, (av['x'] - surf.get_width() // 2, av['y'] + y_offset - surf.get_height() // 2))
                     else:
                         animated_values.remove(av)
 
-                # Draw clouds
-                for cloud in clouds:
-                    if cloud['x'] > WIDTH or (cloud['x'] + cloud['size']) < 0:
-                        continue
-                    draw_cloud(
-                        cloud['x'], cloud['y'], cloud['size'],
-                        cloud.get('op', "+"),
-                        cloud.get('value', 0),
-                        cloud_counter, goal,
-                        cloud['circles'],
-                        cloud['bob_amp'], cloud['bob_freq'],
-                        cloud['phase'], cloud['t0']
-                    )
+                # Draw clouds in PLAY/RESULT
+                if state in (STATE_PLAY, STATE_RESULT):
+                    for cloud in clouds:
+                        if cloud['x'] > WIDTH or (cloud['x'] + cloud['size']) < 0:
+                            continue
+                        draw_cloud(
+                            cloud['x'], cloud['y'], cloud['size'],
+                            cloud.get('op', "+"),
+                            cloud.get('value', 0),
+                            cloud_counter, goal,
+                            cloud['circles'],
+                            cloud['bob_amp'], cloud['bob_freq'],
+                            cloud['phase'], cloud['t0']
+                        )
 
-                draw_raven(bird_x + BIRD_DRAW_OFFSET_X, bird_y + BIRD_DRAW_OFFSET_Y)
+                if state in (STATE_PLAY, STATE_RESULT):
+                    draw_raven(bird_x + BIRD_DRAW_OFFSET_X, bird_y + BIRD_DRAW_OFFSET_Y)
 
                 if state == STATE_PLAY and super_active:
                     font = pygame.font.Font(None, 74)
@@ -1189,6 +1439,27 @@ async def main():
             if state == STATE_RESULT:
                 suppress_flap_sound = True
                 draw_result_overlay()
+
+            if state == STATE_NAME_SAVE:
+                latest_raw = (cloud_values_sum if cloud_values_sum is not None else 0.0)
+                latest_calc_part = 0.0 if wrong_answer_given else abs(latest_raw)
+                latest_total = latest_calc_part + flight_bonus
+                latest = {
+                    'name': name_input.strip() or "Player",
+                    'mode': mode_label(mode),
+                    'calc': latest_calc_part,
+                    'bonus': int(flight_bonus),
+                    'total': latest_total
+                }
+
+                # Remaining time for info text
+                time_left = max(0, rank_show_until - pygame.time.get_ticks()) if name_saved_once and rank_show_until else 0
+                draw_name_save_overlay(latest, scores, name_saved_once, time_left)
+                # Auto-return to start after 10s of showing the ranking (post-save)
+                if name_saved_once and rank_show_until and pygame.time.get_ticks() >= rank_show_until:
+                    reset_run_state()
+                    state = STATE_MODE_SELECT
+                    notify_state("mode_select")
 
             pygame.display.flip()
             pygame.time.Clock().tick(60)

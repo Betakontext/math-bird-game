@@ -166,10 +166,10 @@ STATE_NAME_SAVE      = "name_save"
 state = STATE_CLICK_TO_START
 
 # Gameplay mode
-MODE_ADD_SUB = "A"
-MODE_MUL = "M"
-MODE_DIV = "D"
-MODE_MIX = "X"
+MODE_ADD_SUB = "0"
+MODE_MUL = "1"
+MODE_DIV = "2"
+MODE_MIX = "3"
 mode = MODE_ADD_SUB
 selected_mode_index = 0
 MODE_LIST = [MODE_ADD_SUB, MODE_MUL, MODE_DIV, MODE_MIX]
@@ -595,10 +595,10 @@ def draw_mode_select_screen():
     screen.blit(title, (x_center - title.get_width()//2, y0))
 
     options = [
-        (MODE_ADD_SUB, "A for additions and subtractions"),
-        (MODE_MUL,     "M for multiplications"),
-        (MODE_DIV,     "D for divisions"),
-        (MODE_MIX,     "X to mix all calculation types"),
+        (MODE_ADD_SUB, "0 for additions and subtractions"),
+        (MODE_MUL,     "1 for multiplications"),
+        (MODE_DIV,     "2 for divisions"),
+        (MODE_MIX,     "3 to mix all calculation types"),
     ]
 
     for i, (m, text) in enumerate(options):
@@ -864,7 +864,7 @@ def spawn_total_popup(total_value):
     })
 
 def mode_label(m):
-    return {"A": "Add/Sub", "M": "Mul", "D": "Div", "X": "Mix"}.get(m, m)
+    return {"0": "Add/Sub", "1": "Mul", "2": "Div", "3": "Mix"}.get(m, m)
 
 async def main():
     global state, mode, selected_mode_index
@@ -997,13 +997,13 @@ async def main():
                             notify_state("mode_select")
 
                     elif state == STATE_MODE_SELECT:
-                        if event.key == pygame.K_a:
+                        if event.key == pygame.K_0:
                             selected_mode_index = 0; mode = MODE_LIST[selected_mode_index]
-                        elif event.key == pygame.K_m:
+                        elif event.key == pygame.K_1:
                             selected_mode_index = 1; mode = MODE_LIST[selected_mode_index]
-                        elif event.key == pygame.K_d:
+                        elif event.key == pygame.K_2:
                             selected_mode_index = 2; mode = MODE_LIST[selected_mode_index]
-                        elif event.key == pygame.K_x:
+                        elif event.key == pygame.K_3:
                             selected_mode_index = 3; mode = MODE_LIST[selected_mode_index]
                         elif event.key in (pygame.K_DOWN, pygame.K_RIGHT):
                             selected_mode_index = (selected_mode_index + 1) % len(MODE_LIST)

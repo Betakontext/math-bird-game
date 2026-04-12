@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <html lang="en-us"><script src="https://pygame-web.github.io/archives/0.9/pythons.js" type=module id=site data-LINES=57 data-CONSOLE=25 data-python=python3.12 data-os=vtx,fs,snd,gui async defer>#<!--
 
 print("""
@@ -497,6 +498,9 @@ frameborder="1"
     --btn-active-fg: #000;
     --btn-arrow-bg: rgba(0,0,0,0.25);
     --pulse-duration: 1.6s;
+    --gate-bg: rgba(0,0,0,0.55);
+    --gate-fg: #fff;
+    --gate-ring: rgba(255,255,255,0.85);
   }
 
   @media (max-width: 820px), (max-height: 680px) {
@@ -505,11 +509,13 @@ frameborder="1"
     #mobile-controls .fs-float { right: 12px; bottom: 12px; }
   }
 
+  /* Only-FS mode shows just the floating FS button */
   #mobile-controls.only-fs .combo-pad { display: none !important; }
   #mobile-controls.only-fs {
     visibility: visible !important; opacity: 1 !important; display: block !important;
   }
 
+  /* Overlay container sits on top but does not block canvas except on buttons/gate */
   #mobile-controls {
     position: fixed !important; inset: 0 !important; pointer-events: none;
     z-index: 2147483647 !important; visibility: hidden !important; opacity: 0 !important; display: none !important;
@@ -527,35 +533,20 @@ frameborder="1"
   }
   #mobile-controls .btn:active { background: var(--btn-active-bg); color: var(--btn-active-fg); }
 
-  /* Pfeil-Dualtasten heller als Standard */
+  /* Arrow buttons slightly brighter */
   #mobile-controls .btn.is-arrow { background: var(--btn-arrow-bg); }
 
-  /* Breath-Animation (Helligkeit) im Flugzustand – hohe Spezifität + !important */
+  /* Arrow breath animation during play */
   #mobile-controls.arrow-active .combo-pad .btn.is-arrow.pulse-on {
     animation: arrowBreath var(--pulse-duration) ease-in-out infinite !important;
   }
   @keyframes arrowBreath {
-    0% {
-      background-color: rgba(255,255,255,0.12);
-      border-color: rgba(255,255,255,0.55);
-      box-shadow: 0 0 0 rgba(255,255,255,0);
-      filter: brightness(1.0);
-    }
-    50% {
-      background-color: rgba(255,255,255,0.28);
-      border-color: rgba(255,255,255,0.98);
-      box-shadow: 0 0 18px rgba(255,255,255,0.45);
-      filter: brightness(1.15);
-    }
-    100% {
-      background-color: rgba(255,255,255,0.12);
-      border-color: rgba(255,255,255,0.55);
-      box-shadow: 0 0 0 rgba(255,255,255,0);
-      filter: brightness(1.0);
-    }
+    0%   { background-color: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.55); box-shadow: 0 0 0 rgba(255,255,255,0); filter: brightness(1.0); }
+    50%  { background-color: rgba(255,255,255,0.28); border-color: rgba(255,255,255,0.98); box-shadow: 0 0 18px rgba(255,255,255,0.45); filter: brightness(1.15); }
+    100% { background-color: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.55); box-shadow: 0 0 0 rgba(255,255,255,0); filter: brightness(1.0); }
   }
 
-  /* Kombi-Pad unten links (4x4) */
+  /* 4x4 combo pad bottom-left */
   #mobile-controls .combo-pad {
     position: fixed; left: 16px; bottom: 16px; pointer-events: auto;
     display: grid; gap: var(--gap);
@@ -586,23 +577,53 @@ frameborder="1"
     grid-area: keyEnter; height: calc(var(--btn-size) * 2 + var(--gap));
   }
 
-  /* Untere Reihe: Links = ArrowLeft (ohne Plus-Eingabe), Mitte = 0/Down, Rechts = −/Right */
+  /* Bottom row: left=ArrowLeft, middle=0/Down, right=−/Right */
   #mobile-controls .combo-pad .btn[data-area="left"]  { grid-area: left; }
   #mobile-controls .combo-pad .btn[data-area="d0"]    { grid-area: d0; }
   #mobile-controls .combo-pad .btn[data-area="minus"] { grid-area: minus; }
 
-  /* Fullscreen unten rechts */
+  /* Fullscreen button bottom-right */
   #mobile-controls .fs-float {
     position: fixed; right: 16px; bottom: 16px; z-index: 2147483647; pointer-events: auto;
   }
   #mobile-controls .fs-float .btn { width: var(--btn-size); height: var(--btn-size); }
 
+  /* Play gate overlay: centered tappable area that guarantees 1st user gesture */
+  #mobile-controls .play-gate {
+    position: fixed; inset: 0; display: grid; place-items: center;
+    pointer-events: auto; /* must receive the gesture */
+    background: var(--gate-bg);
+    transition: opacity .25s ease;
+  }
+  #mobile-controls .play-gate.hidden { opacity: 0; pointer-events: none; display: none; }
+
+  #mobile-controls .play-gate .ring {
+    width: 160px; height: 160px; border-radius: 50%;
+    border: 4px solid var(--gate-ring);
+    display: grid; place-items: center;
+    animation: pulse 1.6s ease-in-out infinite;
+    font: 700 18px/1.2 system-ui, sans-serif; color: var(--gate-fg);
+    text-shadow: 0 1px 2px rgba(0,0,0,.35);
+    user-select: none; -webkit-user-select: none;
+  }
+  @keyframes pulse {
+    0% { transform: scale(0.96); box-shadow: 0 0 0 0 rgba(255,255,255,0.35); }
+    50% { transform: scale(1.04); box-shadow: 0 0 22px 6px rgba(255,255,255,0.25); }
+    100% { transform: scale(0.96); box-shadow: 0 0 0 0 rgba(255,255,255,0.0); }
+  }
+
+  /* Keep canvas absolute for pygbag preloader; our overlay floats above it */
   canvas#canvas {
     z-index: 5 !important; position: absolute !important; top: 0; left: 0; right: 0; bottom: 0;
   }
 </style>
 
 <div id="mobile-controls" aria-hidden="true">
+  <!-- Play-gate sits on top until first interaction -->
+  <div class="play-gate" id="play-gate">
+    <div class="ring">Play</div>
+  </div>
+
   <div class="combo-pad">
     <div class="btn" data-area="d1"     data-digit="1">1</div>
     <div class="btn" data-area="d2"     data-digit="2">2</div>
@@ -619,7 +640,6 @@ frameborder="1"
     <div class="btn" data-area="d9"     data-digit="9">9</div>
     <div class="btn" data-area="keyEnter" data-key="Enter">⏎</div>
 
-    <!-- Linker Pfeil: KEINE Plus-Eingabe mehr, nur noch ArrowLeft -->
     <div class="btn is-arrow" data-area="left"  data-arrow="ArrowLeft">◀︎</div>
     <div class="btn is-arrow" data-area="d0"    data-digit="0" data-arrow="ArrowDown">▼ 0</div>
     <div class="btn is-arrow" data-area="minus" data-char="−"  data-arrow="ArrowRight">− ▶︎</div>
@@ -639,149 +659,117 @@ frameborder="1"
       const root = document.getElementById('mobile-controls');
       if (!root) return;
 
-      // Bridge
-      function pyCall(expr){
-        let ok = false;
-        try {
-          if (window.python && (window.python.run || window.python.eval)) {
-            (window.python.run || window.python.eval).call(window.python, expr); ok = true;
-          }
-        } catch(e){}
-        if (!ok) try { if (window.pyodide?.runPython) { window.pyodide.runPython(expr); ok = true; } } catch(e){}
-        return ok;
-      }
-
-      function hardMute() {
-        let hit = false;
-        try { hit = pyCall("stop_all_audio()") || hit; } catch(e){}
-        try { hit = pyCall("import pygame; pygame.mixer.stop()") || hit; } catch(e){}
-        try { hit = pyCall("import pygame; [pygame.mixer.Channel(i).stop() for i in range(32)]") || hit; } catch(e){}
-        return hit;
-      }
-
-      root.querySelectorAll('.btn').forEach(b => { b.style.pointerEvents = 'auto'; });
-
-      function getQS(name, def=null){
-        try { const qs = new URLSearchParams(location.search); return qs.has(name) ? qs.get(name) : def; } catch { return def; }
-      }
       function applyVisible() {
         root.style.setProperty('z-index', '2147483647', 'important');
         root.style.setProperty('visibility', 'visible', 'important');
         root.style.setProperty('opacity', '1', 'important');
         root.style.setProperty('display', 'block', 'important');
       }
+      function canvasOrWindow() { return document.querySelector('canvas') || window; }
 
-      function isMobileLike() {
+      // Make buttons clickable
+      root.querySelectorAll('.btn').forEach(b => { b.style.pointerEvents = 'auto'; });
+
+      // Stick to a simple, robust mobile detection (computed once)
+      let mobileSticky = null;
+      function computeMobileSticky() {
+        if (mobileSticky !== null) return mobileSticky;
         const ua = (navigator.userAgent || '').toLowerCase();
         const isAndroid = /android/.test(ua);
         const isIOS = /iphone|ipad|ipod/.test(ua);
-        const isMobileUA = /mobile/.test(ua) || isAndroid || isIOS;
-        const hasTouch = (('ontouchstart' in window) || (navigator.maxTouchPoints||0) > 0 || (navigator.msMaxTouchPoints||0) > 0);
-        let pointerCoarse=false, pointerFine=false;
-        try { pointerCoarse = matchMedia('(pointer: coarse)').matches; pointerFine = matchMedia('(pointer: fine)').matches; } catch(e){}
-        const w = Math.min(innerWidth||0, document.documentElement.clientWidth||0);
-        const h = Math.min(innerHeight||0, document.documentElement.clientHeight||0);
-        const shorter = Math.min(w||0, h||0);
-        const smallViewport = shorter > 0 && shorter <= 900;
-        if (isAndroid || isIOS) return true;
-        if (hasTouch && (pointerCoarse || (!pointerFine && smallViewport))) return true;
-        if (isMobileUA && (hasTouch || pointerCoarse || smallViewport)) return true;
-        return false;
+        const hasTouch = (('ontouchstart' in window) || (navigator.maxTouchPoints||0) > 0);
+        mobileSticky = isAndroid || isIOS || hasTouch;
+        return mobileSticky;
       }
 
-      let mobileSticky = null;
+      // Show overlay based on device: full pad on mobile, FS-only on desktop
       function evaluate() {
         try {
-          const forceMobile = getQS('forceMobile') === '1' || getQS('forceMobile') === 'true';
-          const forceFS     = getQS('forceFS') === '1'     || getQS('forceFS') === 'true';
-          if (mobileSticky === null) mobileSticky = isMobileLike();
-          root.classList.remove('only-fs');
-          if (forceMobile || mobileSticky) { applyVisible(); return; }
-          if (forceFS) { root.classList.add('only-fs'); applyVisible(); return; }
-          root.classList.add('only-fs'); applyVisible();
-        } catch(e) { root.classList.add('only-fs'); applyVisible(); }
+          const isMob = computeMobileSticky();
+          if (isMob) {
+            root.classList.remove('only-fs');  // show full control pad
+          } else {
+            root.classList.add('only-fs');     // desktop: FS button only
+          }
+          applyVisible();
+        } catch(e) {
+          root.classList.add('only-fs');
+          applyVisible();
+        }
       }
 
-      function canvasOrWindow() { return document.querySelector('canvas') || window; }
-
-      // Key dispatch helpers
-      function dispatchKey(code, type) {
-        const map = {
-          'ArrowUp':'ArrowUp','ArrowDown':'ArrowDown','ArrowLeft':'ArrowLeft','ArrowRight':'ArrowRight',
-          'KeyF':'f','KeyR':'r','KeyQ':'q','Enter':'Enter','Escape':'Escape','Backspace':'Backspace'
-        };
-        const key = map[code] || '';
-        const evt = new KeyboardEvent(type, { key, code, bubbles:true, cancelable:true });
-        canvasOrWindow().dispatchEvent(evt);
-      }
-
-      function dispatchKeyCombo(key, code, opts) {
+      // Play gate logic
+      function dispatchEnterOnce() {
         const target = canvasOrWindow();
-        const down = new KeyboardEvent('keydown', { key, code, ...opts, bubbles:true, cancelable:true });
-        const up   = new KeyboardEvent('keyup',   { key, code, ...opts, bubbles:true, cancelable:true });
+        const down = new KeyboardEvent('keydown', { key:'Enter', code:'Enter', bubbles:true, cancelable:true });
+        const up   = new KeyboardEvent('keyup',   { key:'Enter', code:'Enter', bubbles:true, cancelable:true });
         target.dispatchEvent(down);
         setTimeout(()=>target.dispatchEvent(up), 10);
       }
-
-      function dispatchDigitOnce(d) { dispatchKeyCombo(String(d), 'Digit'+String(d), {}); }
-
-      // Plus ist entfernt; Minus bleibt für negative Resultate
-      function dispatchCharOnce(ch) {
-        const mapping = {
-          '-': { key: '-', code: 'Minus',  shiftKey: false },
-          '−': { key: '-', code: 'Minus',  shiftKey: false }
-        };
-        const m = mapping[ch]; if (!m) return;
-        dispatchKeyCombo(m.key, m.code, { shiftKey: !!m.shiftKey });
+      function hintUME() {
+        try {
+          if (window.MM && typeof window.MM.unlock === 'function') { try { window.MM.unlock(); } catch(e){} }
+          if (window.python && (window.python.run || window.python.eval)) {
+            (window.python.run || window.python.eval).call(window.python, "0");
+          } else if (window.pyodide?.runPython) {
+            window.pyodide.runPython("0");
+          }
+        } catch(e){}
       }
+      const gate = document.getElementById('play-gate');
+      function closeGate() {
+        if (!gate || gate.classList.contains('hidden')) return;
+        gate.classList.add('hidden');
+        applyVisible();
+        try { document.querySelector('canvas')?.focus?.({preventScroll:true}); } catch(e){}
+        dispatchEnterOnce();
+        hintUME();
+      }
+      ['touchstart','click','keydown'].forEach(ev=>{
+        (ev === 'keydown' ? window : gate).addEventListener(ev, (e)=>{
+          if (ev !== 'keydown' || e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault?.();
+            closeGate();
+          }
+        }, { passive: ev!=='touchstart' });
+      });
 
-      function dispatchBackspaceOnce() { dispatchKeyCombo('Backspace', 'Backspace', {}); }
-
-      // Arrow repeat
+      // Key helpers for pad
       const active = new Map();
-      function startRepeat(code) {
-        if (active.has(code)) return;
-        dispatchKey(code, 'keydown');
-        const itv = setInterval(()=>dispatchKey(code, 'keydown'), 55);
-        active.set(code, itv);
+      function dispatchKey(code, type) {
+        const keyMap = {ArrowUp:'ArrowUp',ArrowDown:'ArrowDown',ArrowLeft:'ArrowLeft',ArrowRight:'ArrowRight',KeyF:'f',Enter:'Enter',Backspace:'Backspace'};
+        const key = keyMap[code] || '';
+        const evt = new KeyboardEvent(type, { key, code, bubbles:true, cancelable:true });
+        canvasOrWindow().dispatchEvent(evt);
       }
-      function stopRepeat(code) {
-        const itv = active.get(code);
-        if (itv) clearInterval(itv);
-        active.delete(code);
-        dispatchKey(code, 'keyup');
-      }
-      function stopAllRepeats() {
-        for (const [code, itv] of active.entries()) { clearInterval(itv); dispatchKey(code, 'keyup'); }
-        active.clear();
-      }
+      function startRepeat(code){ if(active.has(code)) return; dispatchKey(code,'keydown'); const itv=setInterval(()=>dispatchKey(code,'keydown'),55); active.set(code,itv); }
+      function stopRepeat(code){ const itv=active.get(code); if(itv) clearInterval(itv); active.delete(code); dispatchKey(code,'keyup'); }
+      function stopAllRepeats(){ for (const [c,i] of active){ clearInterval(i); dispatchKey(c,'keyup'); } active.clear(); }
 
-      // Bindings
       function bindComboBtn(el) {
         const digit = el.getAttribute('data-digit');
         const ch    = el.getAttribute('data-char');
-        const key   = el.getAttribute('data-key');     // Enter/Backspace/KeyF
-        const arrow = el.getAttribute('data-arrow');   // ArrowUp etc.
+        const key   = el.getAttribute('data-key');
+        const arrow = el.getAttribute('data-arrow');
 
-        const onDown = (e) => {
+        const onDown = (e)=>{
           e.preventDefault();
+          closeGate(); // first gesture closes gate
           if ((digit || ch || key) && active.size && !arrow) stopAllRepeats();
-
-          if (digit) dispatchDigitOnce(digit);
-          if (ch)    dispatchCharOnce(ch);
-          if (key) {
-            dispatchKey(key, 'keydown');
-            if (key === 'Backspace' || key === 'KeyF') setTimeout(()=>dispatchKey(key,'keyup'), 10);
+          if (digit){ const k='Digit'+String(digit); const t=canvasOrWindow();
+            const d=new KeyboardEvent('keydown',{key:String(digit),code:k,bubbles:true,cancelable:true});
+            const u=new KeyboardEvent('keyup',{key:String(digit),code:k,bubbles:true,cancelable:true});
+            t.dispatchEvent(d); setTimeout(()=>t.dispatchEvent(u),10);
           }
-
-          if (arrow) startRepeat(arrow);
+          if (ch){ const t=canvasOrWindow(); const code='Minus';
+            const d=new KeyboardEvent('keydown',{key:'-',code, bubbles:true,cancelable:true});
+            const u=new KeyboardEvent('keyup',  {key:'-',code, bubbles:true,cancelable:true});
+            t.dispatchEvent(d); setTimeout(()=>t.dispatchEvent(u),10);
+          }
+          if (key){ dispatchKey(key,'keydown'); if (key==='Backspace' || key==='KeyF') setTimeout(()=>dispatchKey(key,'keyup'),10); }
+          if (arrow){ startRepeat(arrow); }
         };
-
-        const onUp = (e) => {
-          e.preventDefault();
-          if (key && key !== 'Backspace' && key !== 'KeyF') dispatchKey(key, 'keyup');
-          if (arrow) stopRepeat(arrow);
-        };
+        const onUp=(e)=>{ e.preventDefault(); if (key && key!=='Backspace' && key!=='KeyF') dispatchKey(key,'keyup'); if (arrow) stopRepeat(arrow); };
 
         el.addEventListener('touchstart', onDown, {passive:false});
         el.addEventListener('touchend',   onUp,   {passive:false});
@@ -792,106 +780,40 @@ frameborder="1"
       }
       root.querySelectorAll('.combo-pad .btn').forEach(bindComboBtn);
 
-      // Fullscreen
+      // Fullscreen minimal; keep pad only on mobile, FS button only on desktop
       function isDomFS(){ return !!document.fullscreenElement; }
-      function enterFS(){ try { const p=document.documentElement.requestFullscreen(); p?.then?.(()=>{}).catch?.(()=>{}); } catch(e){} }
-      function exitFS(){ try { const p=document.exitFullscreen(); p?.then?.(()=>{}).catch?.(()=>{}); } catch(e){} }
+      function enterFS(){ try { document.querySelector('canvas')?.focus?.({preventScroll:true}); const p=document.documentElement.requestFullscreen(); p?.then?.(()=>{}).catch?.(()=>{});} catch(e){} }
+      function exitFS(){ try { const p=document.exitFullscreen(); p?.then?.(()=>{}).catch?.(()=>{});} catch(e){} }
+
       const fsBtn = root.querySelector('.fs-float [data-action="fs"]');
       if (fsBtn) {
-        const guard = (e)=>{ e.preventDefault(); applyVisible(); try { if (isMobileLike()) root.classList.remove('only-fs'); } catch(e){}; isDomFS()? exitFS() : enterFS(); };
-        fsBtn.addEventListener('click', guard); fsBtn.addEventListener('touchstart', guard, {passive:false});
+        const guard=(e)=>{
+          e.preventDefault();
+          const isMob = computeMobileSticky();
+          if (isMob) root.classList.remove('only-fs'); else root.classList.add('only-fs');
+          isDomFS()? exitFS() : enterFS();
+          const reap=()=>applyVisible(); reap(); setTimeout(reap,50); setTimeout(reap,200);
+        };
+        fsBtn.addEventListener('click', guard);
+        fsBtn.addEventListener('touchstart', guard, {passive:false});
       }
-      document.addEventListener('fullscreenchange', ()=>{ try { evaluate(); } catch(e){}; applyVisible(); setTimeout(applyVisible,50); setTimeout(applyVisible,200); }, {passive:true});
 
-      // Canvas-Fokus
-      function focusCanvasSoon() {
-        const c = document.querySelector('canvas');
-        if (!c) return;
-        try { c.focus({preventScroll:true}); } catch(e){}
-      }
+      document.addEventListener('fullscreenchange', ()=>{
+        try {
+          const isMob = computeMobileSticky();
+          if (isDomFS()) { if (isMob) root.classList.remove('only-fs'); else root.classList.add('only-fs'); }
+          else { if (isMob) root.classList.remove('only-fs'); else root.classList.add('only-fs'); }
+        } catch(e){}
+        const reap=()=>applyVisible(); reap(); setTimeout(reap,50); setTimeout(reap,200);
+      }, {passive:true});
+
+      // Keep canvas focused enough for keys
+      function focusCanvasSoon(){ const c=document.querySelector('canvas'); if(!c) return; try{ c.focus({preventScroll:true}); }catch(e){} }
       setTimeout(focusCanvasSoon, 80);
       setTimeout(focusCanvasSoon, 400);
       document.addEventListener('pointerdown', focusCanvasSoon, { passive: true });
 
-      // Pfeil-Buttons sammeln für Pulse-Steuerung
-      const arrowBtns = Array.from(root.querySelectorAll('.btn.is-arrow'));
-      function enablePulse() {
-        root.classList.add('arrow-active');
-        arrowBtns.forEach(b => {
-          b.classList.add('pulse-on');
-          b.style.animation = 'arrowBreath var(--pulse-duration) ease-in-out infinite';
-        });
-        void root.offsetHeight; // reflow
-      }
-      function disablePulse() {
-        root.classList.remove('arrow-active');
-        arrowBtns.forEach(b => {
-          b.classList.remove('pulse-on');
-          b.style.animation = '';
-        });
-        stopAllRepeats();
-      }
-
-      // Heuristiken/Fallbacks für Standalone
-      let maybePlay = false;
-      let statePlayAcknowledged = False = false; // harmless alias
-
-      // Fallback: wenn keine State-Message, dann nach 2.2s vorsichtig aktivieren
-      setTimeout(() => {
-        if (!statePlayAcknowledged) {
-          enablePulse();
-          maybePlay = true;
-        }
-      }, 2200);
-
-      // Messages: State + ACK
-      const DEBUG_PULSE = false;
-      window.addEventListener('message', (evt) => {
-        try {
-          const data = evt?.data || {};
-          if (!data || !data.type) return;
-
-          if (data.type === 'game_state' || data.type === 'game_state_self') {
-            const st = data.state || '';
-            if (DEBUG_PULSE) console.log('[mobile-controls] game_state:', st);
-            if (st === 'play') {
-              statePlayAcknowledged = true;
-              maybePlay = true;
-              enablePulse();
-            } else {
-              statePlayAcknowledged = false;
-              maybePlay = false;
-              disablePulse();
-            }
-            return;
-          }
-
-          const reply = (note) => { try { evt.source?.postMessage({ type: 'game_ack', ok: true, note }, '*'); } catch(e){} };
-
-          if (data.type === 'pause_audio') {
-            hardMute(); setTimeout(hardMute, 40); setTimeout(hardMute, 140);
-            setTimeout(() => reply('audio_stopped'), 160);
-            return;
-          }
-          if (data.type === 'close_game' || data.type === 'reset_game') {
-            hardMute();
-            setTimeout(() => { try { pyCall("reset_to_boot()"); } catch(e){}; reply('reset_done'); }, 60);
-            return;
-          }
-        } catch(e){}
-      });
-
-      // Bei Pfeilinteraktion Puls sicher anzeigen (falls State-Heuristik aktiv)
-      function pulseOnArrowInteraction() {
-        if (!statePlayAcknowledged && !maybePlay) return;
-        enablePulse();
-      }
-      arrowBtns.forEach(b => {
-        b.addEventListener('touchstart', pulseOnArrowInteraction, {passive:false});
-        b.addEventListener('mousedown',  pulseOnArrowInteraction);
-      });
-
-      // Init
+      // Initial evaluation and follow-ups
       evaluate();
       window.addEventListener('resize', evaluate, { passive: true });
       window.addEventListener('orientationchange', evaluate, { passive: true });

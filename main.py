@@ -238,6 +238,9 @@ count_freeze = False
 # Signs hidden until first collection
 show_signs = False
 
+# Track whether the first counted cloud has been collected in this run
+first_collected_done = False
+
 # Rects for mouse selection in mode screen
 mode_option_rects = {}
 
@@ -296,7 +299,7 @@ def reset_run_state():
     global flap_last, flap_delay_until
     global WIDTH, HEIGHT
     global touch_active, touch_last_pos, tap_target_active, tap_target
-    global count_freeze, show_signs
+    global count_freeze, show_signs, first_collected_done
     global flight_bonus, total_score_popup_spawned
     global result_screen_opened_at, bonus_popup_shown, result_popup_shown, result_popup_shown_at
     global wrong_answer_given, result_input_buffer, result_text, name_input, rank_show_until, name_saved_once
@@ -334,6 +337,7 @@ def reset_run_state():
 
     count_freeze = False
     show_signs = False
+    first_collected_done = False
 
     flight_bonus = 0
     total_score_popup_spawned = False
@@ -875,7 +879,7 @@ async def main():
     global suppress_flap_sound, flap_last, flap_delay_until, chirp_last
     global wind_started, WIDTH, HEIGHT, screen
     global touch_active, touch_last_pos, tap_target_active, tap_target
-    global count_freeze, show_signs
+    global count_freeze, show_signs, first_collected_done
     global flight_bonus, total_score_popup_spawned
     global result_screen_opened_at, bonus_popup_shown, result_popup_shown, result_popup_shown_at
     global wrong_answer_given, name_input, scores, rank_show_until, name_saved_once
@@ -1149,8 +1153,15 @@ async def main():
                     cloud_y = random.randint(0, HEIGHT - 60)
                     cloud_size = random.randint(50, 100)
 
-                    if (not count_freeze) and (cloud_counter < goal):
-                        op, v = pick_cloud_op_and_value()
+                    # Decide if this cloud, upon entering the bird area, will count toward the goal
+                    will_count_enter = (not count_freeze) and (cloud_counter < goal)
+
+                    if will_count_enter:
+                        # First counting cloud must be a positive addition
+                        if not first_collected_done:
+                            op, v = ("+", random.randint(1, 10))
+                        else:
+                            op, v = pick_cloud_op_and_value()
                     else:
                         op, v = ("+", 0)
 
@@ -1184,7 +1195,9 @@ async def main():
                     phase     = random.uniform(0.0, math.tau)
                     t0        = pygame.time.get_ticks() / 1000.0
 
-                    will_count_enter = (not count_freeze) and (cloud_counter < goal)
+                    if will_count_enter:
+                        cloud_entered_counter += 1
+                    last_cloud_spawn = current_time
 
                     clouds.append({
                         'x': WIDTH,
@@ -1198,10 +1211,6 @@ async def main():
                         'bob_amp': bob_amp, 'bob_freq': bob_freq,
                         'phase': phase, 't0': t0
                     })
-
-                    if will_count_enter:
-                        cloud_entered_counter += 1
-                    last_cloud_spawn = current_time
 
                 # Move clouds / offscreen / collision
                 for cloud in clouds[:]:
@@ -1223,9 +1232,6 @@ async def main():
                         if cloud_counter < goal:
                             cloud_counter += 1
 
-                            if not show_signs:
-                                show_signs = True
-
                             op = cloud.get('op', "+")
                             val = int(cloud.get('value', 0))
                             cloud_values_sum = apply_op_to_sum(cloud_values_sum, op, val)
@@ -1235,16 +1241,29 @@ async def main():
                                 if (now - chirp_last) >= chirp_min_interval:
                                     zwitscher_sound.play()
                                     chirp_last = now
-                            if op in ["+","-"]:
-                                col_text = f"{val:+d}" if op == "+" else f"-{abs(val)}"
+
+                            # Animated popup text for the collected cloud:
+                            # - For the very first collected cloud: show only the number (always positive shown)
+                            # - Afterwards: show sign/op as before
+                            if not first_collected_done:
+                                col_text = f"{abs(val)}"
                             else:
-                                col_text = f"{'×' if op=='×' else '/'}{val}"
+                                if op in ["+","-"]:
+                                    col_text = f"{val:+d}" if op == "+" else f"-{abs(val)}"
+                                else:
+                                    col_text = f"{'×' if op=='×' else '/'}{val}"
+
                             animated_values.append({
                                 'x': cloud['x'], 'y': cloud['y'],
                                 'text': col_text,
                                 'size': 30, 'color': RED, 'time_started': pygame.time.get_ticks()
                             })
                             scatter_cloud(cloud['x'], cloud['y'])
+
+                            # Mark first collection as done and enable signs for subsequent displays
+                            if not first_collected_done:
+                                first_collected_done = True
+                                show_signs = True
 
                             clouds.remove(cloud)
 

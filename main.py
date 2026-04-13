@@ -680,7 +680,7 @@ def draw_name_save_overlay(latest_score, top_scores, saved_once, rank_time_left_
     screen.blit(title, (WIDTH//2 - title.get_width()//2, 80))
 
     # Name input (locked after first save)
-    prompt_text = "Enter your name and press ENTER to save:" if not saved_once else "Saved! Ranking will remain visible."
+    prompt_text = "Enter your name and press ENTER to save:" if not saved_once else "Saved! Ranking will remain visible during this session."
     prompt = font.render(prompt_text, True, WHITE)
     screen.blit(prompt, (WIDTH//2 - prompt.get_width()//2, 160))
 
@@ -709,15 +709,17 @@ def draw_name_save_overlay(latest_score, top_scores, saved_once, rank_time_left_
         y += 28
 
     # Hints: show both timing info and "Press F to fly again"
-    info = "Saving shows the ranking for 10s, then returns to start."
+    info = "Saving shows the ranking for 15s, then returns to start."
     if saved_once and rank_time_left_ms > 0:
         sec_left = max(0, int(math.ceil(rank_time_left_ms / 1000.0)))
         info = f"Ranking will return to start in {sec_left}s."
     hint_info = small.render(info, True, WHITE)
     screen.blit(hint_info, (WIDTH//2 - hint_info.get_width()//2, HEIGHT - 110))
 
-    hint_f = small.render("Press F to fly again.", True, WHITE)
-    screen.blit(hint_f, (WIDTH//2 - hint_f.get_width()//2, HEIGHT - 80))
+    if saved_once:
+        hint_f = small.render("Press F to fly again.", True, WHITE)
+        screen.blit(hint_f, (WIDTH//2 - hint_f.get_width()//2, HEIGHT - 80))
+
 
 def play_button_pulse(t, base_r=70, amp=10, speed=1.0):
     return int(base_r + amp * (0.5 + 0.5 * math.sin(2 * math.pi * speed * t)))
@@ -1061,7 +1063,7 @@ async def main():
                                 else:
                                     wrong_answer_given = True
                                     if wrong_sound: wrong_sound.play()
-                                    result_text = "Try again."
+                                    result_text = f"Try again. The correct result is: {target_calc}"
                             except Exception:
                                 result_text = "Invalid input. Please enter a number."
                                 if phaser_sound: phaser_sound.play()
@@ -1087,38 +1089,45 @@ async def main():
                                 result_input_buffer += event.unicode
 
                     elif state == STATE_NAME_SAVE:
-                        # Allow flight restart anytime with F
-                        if event.key in (pygame.K_f, pygame.K_SPACE):
-                            reset_run_state()
-                            state = STATE_MODE_SELECT
-                            notify_state("mode_select")
-                        elif event.key == pygame.K_RETURN:
-                            # Only allow saving once per result
-                            if not name_saved_once:
+                        # Vor dem Speichern: keine Neustarts mit F/SPACE, nur Eingabe-Handling
+                        if not name_saved_once:
+                            if event.key == pygame.K_RETURN:
+                                # Nur einmal speichern
                                 calc_val = (cloud_values_sum if cloud_values_sum is not None else 0.0)
                                 calc_part = 0.0 if wrong_answer_given else abs(calc_val)
                                 total_val = calc_part + flight_bonus
                                 entry = {
                                     'name': name_input.strip() or "Player",
                                     'mode': mode_label(mode),
-                                    'calc': calc_part,   # store the positive contribution
+                                    'calc': calc_part,
                                     'bonus': int(flight_bonus),
                                     'total': total_val
                                 }
-
                                 scores.append(entry)
                                 scores.sort(key=lambda s: s['total'], reverse=True)
-                                # Lock input and show ranking for 10 seconds
-                                rank_show_until = pygame.time.get_ticks() + 10000
+                                # Ranking anzeigen und Eingabe sperren
+                                rank_show_until = pygame.time.get_ticks() + 15000
                                 name_saved_once = True
-                                name_input = ""  # visually lock
-                        elif event.key == pygame.K_BACKSPACE:
-                            # Only allow editing before first save
-                            if not name_saved_once:
+                                name_input = ""  # visuell locken
+                            elif event.key == pygame.K_BACKSPACE:
                                 name_input = name_input[:-1]
+                            else:
+                                # Zeichen anhängen, solange nicht gespeichert
+                                if len(name_input) < 20 and event.unicode.isprintable():
+                                    name_input += event.unicode
                         else:
-                            if not name_saved_once and len(name_input) < 20 and event.unicode.isprintable():
-                                name_input += event.unicode
+                            # Nach dem Speichern: F wieder erlauben (Fly again)
+                            if event.key == pygame.K_f:
+                                reset_run_state()
+                                state = STATE_MODE_SELECT
+                                notify_state("mode_select")
+                            # Optional: SPACE auch wieder erlauben
+                            elif event.key == pygame.K_SPACE:
+                                reset_run_state()
+                                state = STATE_MODE_SELECT
+                                notify_state("mode_select")
+                            # RETURN nach Speichern macht nichts mehr (oder könntest du ignorieren)
+
 
             keys = pygame.key.get_pressed()
 

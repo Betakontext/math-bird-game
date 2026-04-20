@@ -1,441 +1,17 @@
-<!DOCTYPE html>
-<html lang="en-us"><script src="https://pygame-web.github.io/cdn/0.9.3/pythons.js" type=module id="site" data-python="python3.12" data-LINES=42 data-COLUMNS=132 data-os="vtx,snd,gui" async defer>#<!--
+# Math bird | Mobile UI build patch
+# - Stellt <!DOCTYPE html> am Anfang sicher (verhindert Quirks Mode)
+# - Entfernt alte mobile-controls-Blöcke und injiziert aktualisierten SNIPPET
+# - SNIPPET: combo-pad (4x4), Enter gestreckt, forceMobile/forcemobile, Android Tap-Through, Atem-Pfeile, dynamische Größen
+# https://github.com/betakontext/mathbird
+# Licensed under the MIT License
 
-print("""
-Loading math-bird-game from math-bird-game.apk
-    Pygbag Version : 0.9.3
-    Template Version : 0.9.3
-    Python  : 3.12
-    CDN URL : https://pygame-web.github.io/cdn/0.9.3/
-    Screen  : 1280x720
-    Title   : math-bird-game
-    Folder  : math-bird-game
-    Authors : pgw
-    SPDX-License-Identifier: cookiecutter.spdx
-
-""")
-
-import sys
-import asyncio
-import platform
-import json
 from pathlib import Path
+import re
 
-# do not rename
-async def custom_site():
-    import embed
-    platform.document.body.style.background = "#7f7f7f"
+WEB = Path("build/web")
+INDEX = WEB / "index.html"
 
-    platform.window.transfer.hidden = true
-    platform.window.canvas.style.visibility = "visible"
-
-
-    bundle = "math-bird-game"
-
-    # the C or js loader could do that but be explicit.
-    appdir = Path(f"/data/data/{bundle}") # /data/data/math-bird-game
-    appdir.mkdir()
-
-
-    # unpack filesystem from compressed archive into work dir
-    if platform.window.location.host.find('.itch.zone')>0:
-        import zipfile
-        async with platform.fopen("math-bird-game.apk", "rb") as archive:
-            with zipfile.ZipFile(archive) as zip_ref:
-                zip_ref.extractall(appdir.as_posix())
-    else:
-        import tarfile
-        async with platform.fopen("math-bird-game.tar.gz", "rb") as archive:
-            tar = tarfile.open(fileobj=archive, mode="r:gz")
-            tar.extractall(path=appdir.as_posix(), filter='tar')
-            tar.close()
-
-    # preloader will change to work dir and prepend it to sys.path
-    platform.run_main(PyConfig, loaderhome= appdir / "assets", loadermain=None)
-
-
-    # wait preloading complete : that includes images and wasm compilation of bundled modules
-    while embed.counter()<0:
-        await asyncio.sleep(.1)
-
-    main = appdir / "assets" / "main.py"
-
-    # TODO: test for window.webkitAudioContext and block aio loop until gesture if accessing media manager play
-    # before a gesture is recorded ( touch or click )
-
-    # test/wait user media interaction
-    if not platform.window.MM.UME:
-
-        # now that apk is mounted we have access to font cache
-        # but we need to fill __file__ that is not yet set
-        __import__(__name__).__file__ = main
-
-        # now make a prompt
-        msg  = "Ready to start ! Please click/touch page"
-        platform.window.infobox.innerText = msg
-        print("\n"*4, f"    * Waiting for media user engagement. {msg} *" , "\n"*4)
-
-        while not platform.window.MM.UME:
-            await asyncio.sleep(.1)
-
-    # start async top level machinery if not started and add a console in any case if requested.
-    await TopLevel_async_handler.start_toplevel(platform.shell, console=window.python.config.debug)
-
-    # now that apk is mounted we have access to font cache
-    # but we need to fill __file__/__name__ that are not yet set
-    __import__(__name__).__file__ = main
-
-
-    def ui_callback(pkg):
-        platform.window.infobox.innerText = f"installing {pkg}"
-
-    await shell.source(main, callback=ui_callback)
-
-    # if you don't reach that step
-    # your main.py has an infinite sync loop somewhere !
-
-    platform.window.infobox.style.display = "none"
-    platform.window.config.gui_divider = 1
-    platform.window.window_resize()
-    print("default.tmpl: done")
-
-    shell.interactive()
-
-asyncio.run( custom_site() )
-
-
-
-
-
-
-
-
-
-
-
-
-# BEGIN BLOCK
-#
-# now this is the html part you can (and should) customize
-# It is not mandatory : pygame-script when it reads the first line (also called
-# shebang ) of above code create absolute minimal widget set
-# required for running with default rules
-#
-# do not alter that comment block it is separating python code from html code
-# =============================================================================
-# --></script><head><!--
-//=============================================================================
-//
-//
-//
-//
-//
-//
-//
-
-    {%- if cookiecutter.comment != "" -%}
-{{cookiecutter.comment}}
-    {% endif %}
-
---><script type="application/javascript">
-// END BLOCK
-
-
-
-// this dict is available under PyConfig.config from __main__
-
-config = {
-    xtermjs : "1" ,
-    _sdl2 : "canvas",
-    user_canvas : 0,
-    user_canvas_managed : 0,
-    gui_divider : 2,
-    ume_block : 1,
-    can_close : 0,
-    archive : "math-bird-game",
-    gui_debug : 2,
-    cdn : "https://pygame-web.github.io/cdn/0.9.3/",
-    autorun : 0,
-    PYBUILD : "3.12",
-    fb_ar   :  1.77,
-    fb_width : "1280",
-    fb_height : "720"
-}
-
-function show_infobox() {
-    infobox.style.display = "block";
-
-    // Measure box
-    const w = infobox.offsetWidth;
-    const h = infobox.offsetHeight;
-
-    // Center in viewport
-    const left = (window.innerWidth - w) / 2;
-    const top = (window.innerHeight - h) / 2;
-
-    infobox.style.left = left + "px";
-    infobox.style.top = top + "px";
-}
-
-</script>
-
-    <title>math-bird-game</title>
-    <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="viewport" content="height=device-height, initial-scale=1.0">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes"/>
-
-
-    <link rel="icon" type="image/png" href="favicon.png" sizes="16x16">
-
-    <style>
-        #status {
-            display: inline-block;
-            vertical-align: top;
-            margin-top: 20px;
-            margin-left: 30px;
-            font-weight: bold;
-            color: rgb(120, 120, 120);
-        }
-
-        #progress {
-            height: 20px;
-            width: 300px;
-        }
-
-        #infobox {
-            position: fixed; /* center relative to viewport */
-            background: green;
-            color: blue;
-            font-weight: bold;
-            padding: 12px 24px;
- /*           display: none; */
-            z-index: 999999;
-        }
-        div.emscripten { text-align: center; }
-        div.emscripten_border { border: 1px solid black; }
-        div.thick_border { border: 4px solid black; }
-
-        /* the canvas *must not* have any border or padding, or mouse coords will be wrong */
-        /* average size of droid screen 470dp x 320dp  */
-        canvas.emscripten {
-            border: 0px none;
-            background-color: transparent;
-            width: 100%;
-            height: 100%;
-            z-index: 5;
-
-            padding: 0;
-            margin: 0 auto;
-
-            position: absolute;
-            top: 0;
-            bottom: 0;
-            left: 0;
-            right: 0;
-        }
-
-        body {
-            font-family: arial;
-            margin: 0;
-            padding: none;
-            background-color:powderblue;
-        }
-
-        .topright{
-           position:absolute;
-           top:0px;
-           right:0px;
-        }
-
-        .bottomright {
-            position:absolute;
-            top: 40%;
-            right: 0px;
-        }
-
-        .center {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .trinfo{
-           position: relative;
-           right: 0px;
-           border: 1px solid black;
-        }
-
-        .framed{
-           position: relative;
-           top: 150px;
-           right: 10px;
-           border: 1px solid black;
-        }
-    </style>
-
-    <script>
-/*
-        if (navigator.serviceWorker)
-            navigator.serviceWorker.register("https://pygame-web.github.io/cdn/0.9.3/pygbag0.9.3.js")
-        else
-            console.warn("Service workers not supported")
-*/
-    </script>
-
-    <script src="https://pygame-web.github.io/cdn/0.9.3//browserfs.min.js"></script>
-
-</head>
-
-<body>
-
-    <div id="transfer" align=center>
-<!--        <div class="spinner" id='spinner'></div> -->
-        <div class="emscripten" id="status">Downloading...</div>
-        <div class="emscripten">
-            <progress value="0" max="100" id="progress"></progress>
-        </div>
-    </div>
-
-
-
-    <canvas class="emscripten" id="canvas"
-width="1px"
-height="1px"
-    oncontextmenu="event.preventDefault()" tabindex=1>
-    </canvas>
-
-    <canvas class="emscripten" id="canvas3d"
-width="1280px"
-height="720px"
-    oncontextmenu="event.preventDefault()" tabindex=1 hidden>
-    </canvas>
-
-    <div id="infobox">Loading, please wait ...</div>
-
-    <div id=html></div>
-
-    <div id=crt  class=bottomright >
-
-        <div id="system" hidden>
-            <div class="button-container">
-                <button id="aiostop" disabled>AIO ⏏︎</button>
-                <button id="aiopaused_true" disabled>AIO ■</button>
-                <button id="aiopaused_false" disabled>AIO ▶</button>
-                <button id="pygame_mixer_music_pause" disabled>Music ■</button>
-            </div>
-
-            <div class="button-container">
-                <div id=load_min>min</div>
-                <div id=load_avg>avg</div>
-                <div id=load_max>max</div>
-              <button id="load_rst" disabled>RESET</button>
-            </div>
-
-            <div id="level">(battery level unknown)</div>
-            <div id="stateBattery">(charging state unknown)</div>
-
-        </div>
-
-        <div id=box class="emscripten_border" hidden=true>
-
-            <div id="info" class="trinfo"></div>
-
-            <iframe id="iframe" class="framed" name="iframe"
-width="470px" height="90%"
-allowtransparency="true"
-style="z-index: 10;"
-style="background: #FFFFFF;"
-frameborder="1"
-                allowfullscreen="true"
-                webkitallowfullscreen="true"
-                msallowfullscreen="true"
-                mozallowfullscreen="true"
-                sandbox="allow-same-origin allow-top-navigation allow-scripts allow-pointer-lock"
-                allow="autoplay; fullscreen *; geolocation; microphone; camera; midi; monetization; xr-spatial-tracking; gamepad; gyroscope; accelerometer; xr; cross-origin-isolated"
-                src="https://pygame-web.github.io/cdn/0.9.3/empty.html"
-                scrolling="yes">
-            </iframe>
-        </div>
-
-    </div>
-
-
-    <div id="dlg" hidden>
-        <input type="file" id="dlg_multifile" multiple accept="image/*">
-        <label for="dlg_multifile">Select files</label>
-    </div>
-
-    <div id="pyconsole">
-        <div id="terminal" tabIndex=1 align="left"></div>
-    </div>
-
-    <script type="application/javascript">
-
-    globalThis.__canvas_resized = (self, ecw, ech) => {
-        console.warn("TODO: panda3d canvas monitor", self, ecw, ech)
-    }
-
-    async function custom_onload(debug_hidden) {
-        // this is called before anything python is loaded
-        // make your js customization here
-        console.log(__FILE__, "custom_onload")
-
-        pyconsole.hidden = debug_hidden
-        system.hidden = debug_hidden
-        transfer.hidden = debug_hidden
-        info.hidden = debug_hidden
-        box.hidden =  debug_hidden
-
-        show_infobox()
-    }
-
-    function custom_prerun(){
-        // no python main and no (MEMFS + VFS) yet.
-        console.log(__FILE__, "custom_prerun")
-
-    }
-
-    function custom_postrun(){
-        // python main and no VFS filesystem yet.
-        console.log(__FILE__, "custom_postrun")
-
-    }
-
-    function debug() {
-        // allow to gain access to dev tools from js console
-        // but only on desktop. difficult to reach when in iframe
-        python.config.debug = true
-        custom_onload(false)
-        Module.PyRun_SimpleString("shell.uptime()")
-        window_resize()
-    }
-
-    function info_inline(data){
-        document.getElementById("info").innerHTML = data
-    }
-
-    function info_online(url) {
-        // display info about current APK
-        fetch( url /*, options */)
-            .then((response) => response.text())
-            .then((html) => {
-                info_inline(html);
-        })
-        .catch((error) => {
-            console.warn(error);
-        });
-    }
-
-    function frame_online(url) {
-        window.frames["iframe"].location = url;
-    }
-
-    </script>
-
-<!-- BEGIN mobile-controls -->
+SNIPPET = r"""<!-- BEGIN mobile-controls -->
 <style>
   :root {
     --btn-size: 64px;
@@ -588,28 +164,7 @@ frameborder="1"
 (function () {
   function ready(fn){ if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', fn, { once: true }); } else { fn(); } }
 
-  // BrowserFS Fallback: lädt lokale Kopie, falls CDN blockiert/ORB aktiv ist
-  function checkAndLoadBrowserFS() {
-    try {
-      if (window.BrowserFS) return;
-      var local = (window.location.origin + window.location.pathname).replace(/\/[^\/]*$/,'') + '/vendor/browserfs.min.js';
-      var s = document.createElement('script');
-      s.src = local; s.async = true;
-      s.onerror = function(){
-        var s2 = document.createElement('script');
-        s2.src = 'https://pygame-web.github.io/cdn/0.9.3/browserfs.min.js'; // ohne doppelten Slash
-        document.head.appendChild(s2);
-      };
-      document.head.appendChild(s);
-    } catch(e){}
-  }
-
   ready(function initMobileControls() {
-    if (window.__MB_UI_INITED__) return;           // Doppel-Init verhindern
-    window.__MB_UI_INITED__ = true;
-
-    checkAndLoadBrowserFS(); // früh versuchen
-
     const root = document.getElementById('mobile-controls');
     if (!root) return;
 
@@ -632,10 +187,7 @@ frameborder="1"
         setTimeout(()=>t.dispatchEvent(new KeyboardEvent('keyup', { key:'Enter', code:'Enter', bubbles:true, cancelable:true })), 10);
       } catch(e) {}
     }
-
-    const isiOS = /iphone|ipad|ipod/i.test((navigator.userAgent||'') + (navigator.platform||''));
     function dispatchPointerToCanvas() {
-      if (isiOS) return; // Auf iOS keine Pointer-Injektion (vermeidet Rekursion)
       const c = document.querySelector('canvas');
       if (!c) return;
       try {
@@ -661,9 +213,9 @@ frameborder="1"
       if (mobileSticky !== null) return mobileSticky;
       const ua = (navigator.userAgent || '').toLowerCase();
       const isAndroid = /android/.test(ua);
-      const isIOSua = /iphone|ipad|ipod/.test(ua);
+      const isIOS = /iphone|ipad|ipod/.test(ua);
       const hasTouch = (('ontouchstart' in window) || (navigator.maxTouchPoints||0) > 0);
-      mobileSticky = isAndroid || isIOSua || hasTouch;
+      mobileSticky = isAndroid || isIOS || hasTouch;
       return mobileSticky;
     }
 
@@ -681,12 +233,17 @@ frameborder="1"
     function stabilizeAudio() {
       try {
         const AC = window.AudioContext || window.webkitAudioContext;
+        // Bevorzugt vorhandenen Context der Engine nutzen
         const ctx =
           (window.MM && (window.MM.ctx || window.MM.context)) ||
           window.__audioCtx ||
           (AC ? (window.__audioCtx = new AC()) : null);
         if (!ctx) return;
+
+        // Sicherstellen, dass der Context läuft (nach User-Geste erlaubt)
         if (ctx.state !== 'running') { ctx.resume?.(); }
+
+        // Kurzes „Priming“, um Render-Pipeline aufzuwärmen (verringert Knistern am Start)
         const seconds = 0.05;
         const sr = ctx.sampleRate || 48000;
         const buf = ctx.createBuffer(1, Math.max(1, Math.floor(sr * seconds)), sr);
@@ -694,32 +251,25 @@ frameborder="1"
         src.buffer = buf;
         src.connect(ctx.destination);
         src.start(0);
-      } catch(e) {}
+      } catch(e) { /* still fine */ }
     }
+    // Optional global verfügbar machen
     try { window.stabilizeAudio = stabilizeAudio; } catch(e) {}
 
     const gate = document.getElementById('play-gate');
     let gateJustClosedAt = 0;
-    let gateClosed = false; // iOS: Einmal-Guard
-
     function closeGate() {
-      if (gateClosed) return;
-      gateClosed = true;
-
       gateJustClosedAt = Date.now();
-      if (gate) {
-        try { gate.style.pointerEvents = 'none'; } catch(e) {}
-        gate.classList.add('hidden');
-        try { gate.remove(); } catch(e) {}
-      }
+      if (!gate) return;
+      try { gate.style.pointerEvents = 'none'; } catch(e) {}
+      gate.classList.add('hidden');
+      try { gate.remove(); } catch(e) {}
       try { root.style.pointerEvents = 'none'; } catch(e) {}
 
       applyVisible();
       focusCanvasRetries();
-
       dispatchEnterOnce();
-      try { stabilizeAudio(); } catch(e) {}
-
+      try { window.stabilizeAudio?.(); } catch(e){}
       requestAnimationFrame(()=>dispatchPointerToCanvas());
 
       try {
@@ -727,25 +277,11 @@ frameborder="1"
         if (window.python && (window.python.run || window.python.eval)) (window.python.run || window.python.eval).call(window.python, "0");
         else if (window.pyodide?.runPython) window.pyodide.runPython("0");
       } catch(e) {}
-
-      // Gate-Listener entfernen (Reentrancy verhindern)
-      try {
-        gate.removeEventListener('touchstart', onGateTouchStart, {passive:false});
-        gate.removeEventListener('click', onGateClick);
-        window.removeEventListener('keydown', onGateKeydown, {passive:true});
-      } catch(e) {}
     }
 
-    function onGateTouchStart(e){ e.preventDefault(); closeGate(); }
-    function onGateClick(e){ e.preventDefault(); closeGate(); }
-    function onGateKeydown(e){
-      if (!e.isTrusted) return; // synthetische Events ignorieren
-      if (e.key==='Enter' || e.key===' ') { closeGate(); }
-    }
-
-    gate.addEventListener('touchstart', onGateTouchStart, {passive:false});
-    gate.addEventListener('click', onGateClick);
-    window.addEventListener('keydown', onGateKeydown, {passive:true});
+    gate.addEventListener('touchstart', (e)=>{ e.preventDefault(); closeGate(); }, {passive:false});
+    gate.addEventListener('click',      (e)=>{ e.preventDefault(); closeGate(); });
+    window.addEventListener('keydown',  (e)=>{ if (e.key==='Enter' || e.key===' ') { closeGate(); } }, {passive:true});
 
     document.addEventListener('pointerdown', (e) => {
       if (Date.now() - gateJustClosedAt < 600) {
@@ -813,6 +349,41 @@ frameborder="1"
 })();
 </script>
 <!-- END mobile-controls -->
+"""
 
-</body>
-</html>
+def remove_old_blocks(html: str) -> str:
+    start, end = "<!-- BEGIN mobile-controls -->", "<!-- END mobile-controls -->"
+    while start in html and end in html:
+        pre = html.split(start)[0]
+        post = html.split(end)[-1]
+        html = pre + post
+    return html
+
+def ensure_doctype_top(html: str) -> str:
+    # <!DOCTYPE html> ganz oben sicherstellen
+    if re.match(r'^\s*<!doctype\s+html\s*>', html, flags=re.IGNORECASE):
+        return html
+    return "<!DOCTYPE html>\n" + html.lstrip()
+
+def main():
+    if not WEB.exists() or not INDEX.exists():
+        raise SystemExit("Build first: pygbag --build . (missing build/web/index.html)")
+
+    html = INDEX.read_text(encoding="utf-8")
+
+    # 1) DOCTYPE am Anfang sichern (gegen Quirks Mode)
+    html = ensure_doctype_top(html)
+
+    # 2) Alte mobile-controls entfernen
+    html = remove_old_blocks(html)
+
+    # 3) SNIPPET vor </body> injizieren
+    if "</body>" not in html:
+        raise SystemExit("No </body> tag found in build/web/index.html")
+    html = html.replace("</body>", SNIPPET + "\n</body>")
+
+    INDEX.write_text(html, encoding="utf-8")
+    print("Patched build/web/index.html: DOCTYPE ensured + mobile controls injected.")
+
+if __name__ == "__main__":
+    main()

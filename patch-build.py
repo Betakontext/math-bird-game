@@ -1,15 +1,27 @@
 # Math bird | Mobile UI build patch
-# - Stellt <!DOCTYPE html> am Anfang sicher (verhindert Quirks Mode)
+# - DOCTYPE am Anfang sicherstellen (verhindert Quirks Mode)
 # - Entfernt alte mobile-controls-Blöcke und injiziert aktualisierten SNIPPET
 # - SNIPPET: combo-pad (4x4), Enter gestreckt, forceMobile/forcemobile, Android Tap-Through, Atem-Pfeile, dynamische Größen
+# - iPad-Fix: Rekursion verhindert (gateClosed, isTrusted-Filter, Listener-Abbau, iOS ohne Pointer-Injektion)
+# - CDN/ORB-Fix: Entfernt trailing slash in data-cdn/config.cdn und spiegelt BrowserFS lokal als Fallback
 # https://github.com/betakontext/mathbird
 # Licensed under the MIT License
 
 from pathlib import Path
 import re
+import shutil
+import subprocess
+import sys
+import urllib.request
 
 WEB = Path("build/web")
 INDEX = WEB / "index.html"
+VENDOR_DIR = WEB / "vendor"
+LOCAL_BROWSERFS = VENDOR_DIR / "browserfs.min.js"
+BFS_URLS = [
+    "https://unpkg.com/browserfs@1.4.3/dist/browserfs.min.js",
+    "https://cdn.jsdelivr.net/npm/browserfs@1.4.3/dist/browserfs.min.js",
+]
 
 SNIPPET = r"""<!-- BEGIN mobile-controls -->
 <style>
@@ -164,7 +176,28 @@ SNIPPET = r"""<!-- BEGIN mobile-controls -->
 (function () {
   function ready(fn){ if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', fn, { once: true }); } else { fn(); } }
 
+  // BrowserFS Fallback: lädt lokale Kopie, falls CDN blockiert/ORB aktiv ist
+  function checkAndLoadBrowserFS() {
+    try {
+      if (window.BrowserFS) return;
+      var local = (window.location.origin + window.location.pathname).replace(/\/[^\/]*$/,'') + '/vendor/browserfs.min.js';
+      var s = document.createElement('script');
+      s.src = local; s.async = true;
+      s.onerror = function(){
+        var s2 = document.createElement('script');
+        s2.src = 'https://pygame-web.github.io/cdn/0.9.3/browserfs.min.js'; // ohne doppelten Slash
+        document.head.appendChild(s2);
+      };
+      document.head.appendChild(s);
+    } catch(e){}
+  }
+
   ready(function initMobileControls() {
+    if (window.__MB_UI_INITED__) return;           // Doppel-Init verhindern
+    window.__MB_UI_INITED__ = true;
+
+    checkAndLoadBrowserFS(); // früh versuchen
+
     const root = document.getElementById('mobile-controls');
     if (!root) return;
 
@@ -187,7 +220,10 @@ SNIPPET = r"""<!-- BEGIN mobile-controls -->
         setTimeout(()=>t.dispatchEvent(new KeyboardEvent('keyup', { key:'Enter', code:'Enter', bubbles:true, cancelable:true })), 10);
       } catch(e) {}
     }
+
+    const isiOS = /iphone|ipad|ipod/i.test((navigator.userAgent||'') + (navigator.platform||''));
     function dispatchPointerToCanvas() {
+      if (isiOS) return; // Auf iOS keine Pointer-Injektion (vermeidet Rekursion)
       const c = document.querySelector('canvas');
       if (!c) return;
       try {
@@ -213,9 +249,9 @@ SNIPPET = r"""<!-- BEGIN mobile-controls -->
       if (mobileSticky !== null) return mobileSticky;
       const ua = (navigator.userAgent || '').toLowerCase();
       const isAndroid = /android/.test(ua);
-      const isIOS = /iphone|ipad|ipod/.test(ua);
+      const isIOSua = /iphone|ipad|ipod/.test(ua);
       const hasTouch = (('ontouchstart' in window) || (navigator.maxTouchPoints||0) > 0);
-      mobileSticky = isAndroid || isIOS || hasTouch;
+      mobileSticky = isAndroid || isIOSua || hasTouch;
       return mobileSticky;
     }
 
@@ -233,17 +269,12 @@ SNIPPET = r"""<!-- BEGIN mobile-controls -->
     function stabilizeAudio() {
       try {
         const AC = window.AudioContext || window.webkitAudioContext;
-        // Bevorzugt vorhandenen Context der Engine nutzen
         const ctx =
           (window.MM && (window.MM.ctx || window.MM.context)) ||
           window.__audioCtx ||
           (AC ? (window.__audioCtx = new AC()) : null);
         if (!ctx) return;
-
-        // Sicherstellen, dass der Context läuft (nach User-Geste erlaubt)
         if (ctx.state !== 'running') { ctx.resume?.(); }
-
-        // Kurzes „Priming“, um Render-Pipeline aufzuwärmen (verringert Knistern am Start)
         const seconds = 0.05;
         const sr = ctx.sampleRate || 48000;
         const buf = ctx.createBuffer(1, Math.max(1, Math.floor(sr * seconds)), sr);
@@ -251,25 +282,32 @@ SNIPPET = r"""<!-- BEGIN mobile-controls -->
         src.buffer = buf;
         src.connect(ctx.destination);
         src.start(0);
-      } catch(e) { /* still fine */ }
+      } catch(e) {}
     }
-    // Optional global verfügbar machen
     try { window.stabilizeAudio = stabilizeAudio; } catch(e) {}
 
     const gate = document.getElementById('play-gate');
     let gateJustClosedAt = 0;
+    let gateClosed = false; // iOS: Einmal-Guard
+
     function closeGate() {
+      if (gateClosed) return;
+      gateClosed = true;
+
       gateJustClosedAt = Date.now();
-      if (!gate) return;
-      try { gate.style.pointerEvents = 'none'; } catch(e) {}
-      gate.classList.add('hidden');
-      try { gate.remove(); } catch(e) {}
+      if (gate) {
+        try { gate.style.pointerEvents = 'none'; } catch(e) {}
+        gate.classList.add('hidden');
+        try { gate.remove(); } catch(e) {}
+      }
       try { root.style.pointerEvents = 'none'; } catch(e) {}
 
       applyVisible();
       focusCanvasRetries();
+
       dispatchEnterOnce();
-      try { window.stabilizeAudio?.(); } catch(e){}
+      try { stabilizeAudio(); } catch(e) {}
+
       requestAnimationFrame(()=>dispatchPointerToCanvas());
 
       try {
@@ -277,11 +315,25 @@ SNIPPET = r"""<!-- BEGIN mobile-controls -->
         if (window.python && (window.python.run || window.python.eval)) (window.python.run || window.python.eval).call(window.python, "0");
         else if (window.pyodide?.runPython) window.pyodide.runPython("0");
       } catch(e) {}
+
+      // Gate-Listener entfernen (Reentrancy verhindern)
+      try {
+        gate.removeEventListener('touchstart', onGateTouchStart, {passive:false});
+        gate.removeEventListener('click', onGateClick);
+        window.removeEventListener('keydown', onGateKeydown, {passive:true});
+      } catch(e) {}
     }
 
-    gate.addEventListener('touchstart', (e)=>{ e.preventDefault(); closeGate(); }, {passive:false});
-    gate.addEventListener('click',      (e)=>{ e.preventDefault(); closeGate(); });
-    window.addEventListener('keydown',  (e)=>{ if (e.key==='Enter' || e.key===' ') { closeGate(); } }, {passive:true});
+    function onGateTouchStart(e){ e.preventDefault(); closeGate(); }
+    function onGateClick(e){ e.preventDefault(); closeGate(); }
+    function onGateKeydown(e){
+      if (!e.isTrusted) return; // synthetische Events ignorieren
+      if (e.key==='Enter' || e.key===' ') { closeGate(); }
+    }
+
+    gate.addEventListener('touchstart', onGateTouchStart, {passive:false});
+    gate.addEventListener('click', onGateClick);
+    window.addEventListener('keydown', onGateKeydown, {passive:true});
 
     document.addEventListener('pointerdown', (e) => {
       if (Date.now() - gateJustClosedAt < 600) {
@@ -360,30 +412,58 @@ def remove_old_blocks(html: str) -> str:
     return html
 
 def ensure_doctype_top(html: str) -> str:
-    # <!DOCTYPE html> ganz oben sicherstellen
     if re.match(r'^\s*<!doctype\s+html\s*>', html, flags=re.IGNORECASE):
         return html
     return "<!DOCTYPE html>\n" + html.lstrip()
+
+def trim_cdn_trailing_slash(html: str) -> str:
+    # data-cdn=".../0.9.3/" -> ".../0.9.3"
+    html = re.sub(r'(data-cdn\s*=\s*")([^"]*?)(/)"', r'\1\2"', html)
+    # config.cdn = ".../0.9.3/" -> ".../0.9.3"
+    html = re.sub(r'(config\.cdn\s*=\s*")([^"]*?)(/)"', r'\1\2"', html)
+    # src="https://.../pythons.js?#" bleibt unberührt
+    return html
+
+def mirror_browserfs_locally():
+    VENDOR_DIR.mkdir(parents=True, exist_ok=True)
+    if LOCAL_BROWSERFS.exists() and LOCAL_BROWSERFS.stat().st_size > 0:
+        print(f"Local BrowserFS already present: {LOCAL_BROWSERFS}")
+        return
+    last_err = None
+    for url in BFS_URLS:
+        try:
+            print(f"Downloading BrowserFS from {url} ...")
+            with urllib.request.urlopen(url, timeout=30) as resp:
+                data = resp.read()
+            if not data or len(data) < 10_000:
+                raise RuntimeError("Downloaded file too small – unexpected content")
+            LOCAL_BROWSERFS.write_bytes(data)
+            print(f"Saved {LOCAL_BROWSERFS}")
+            return
+        except Exception as e:
+            last_err = e
+            print(f"Warning: Could not download from {url}: {e}")
+    print(f"Warning: All BrowserFS mirror attempts failed: {last_err}")
 
 def main():
     if not WEB.exists() or not INDEX.exists():
         raise SystemExit("Build first: pygbag --build . (missing build/web/index.html)")
 
+    # Spiegel BrowserFS lokal als Fallback gegen ORB/CDN-Probleme
+    mirror_browserfs_locally()
+
     html = INDEX.read_text(encoding="utf-8")
 
-    # 1) DOCTYPE am Anfang sichern (gegen Quirks Mode)
     html = ensure_doctype_top(html)
-
-    # 2) Alte mobile-controls entfernen
     html = remove_old_blocks(html)
+    html = trim_cdn_trailing_slash(html)
 
-    # 3) SNIPPET vor </body> injizieren
     if "</body>" not in html:
         raise SystemExit("No </body> tag found in build/web/index.html")
     html = html.replace("</body>", SNIPPET + "\n</body>")
 
     INDEX.write_text(html, encoding="utf-8")
-    print("Patched build/web/index.html: DOCTYPE ensured + mobile controls injected.")
+    print("Patched build/web/index.html: DOCTYPE ensured + iPad-safe controls + CDN/ORB fixes (trailing slash + local BrowserFS) injected.")
 
 if __name__ == "__main__":
     main()

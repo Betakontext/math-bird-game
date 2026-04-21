@@ -5,44 +5,62 @@
 # Copyright (c) 2026 Christoph Medicus
 # Licensed under the MIT License
 
-import sys
-import random
-import asyncio
-import math
+import sys, random, asyncio, math, os
 import pygame
-import os
 
-# Get script directory safely
-script_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in locals() or '__file__' in globals() else os.getcwd()
+# js optional und defensiv importieren (in pygbag vorhanden)
+try:
+    import js  # type: ignore
+except Exception:
+    js = None
+
+# Arbeitsverzeichnis korrekt setzen (auch im Web sinnvoll für relative Pfade)
+script_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
 os.chdir(script_dir)
 
+def is_browser() -> bool:
+    return js is not None
+
+def is_webkit() -> bool:
+    # Grobe Erkennung für iOS/macOS Safari (WebKit)
+    try:
+        if js is not None:
+            ua = str(js.navigator.userAgent).lower()
+            return ('safari' in ua) or ('iphone' in ua) or ('ipad' in ua) or ('macintosh' in ua)
+    except Exception:
+        pass
+    return False
+
+# 1) Mixer VOR pygame.init konfigurieren (Reihenfolge ist kritisch!)
+try:
+    if is_webkit():
+        # Safari/WebKit: 48 kHz + größerer Buffer (stabilisiert Wind/Noise)
+        pygame.mixer.pre_init(frequency=48000, size=-16, channels=1, buffer=4096)
+    else:
+        # Android/Linux/Chrome etc.: deine bisherigen Defaults
+        pygame.mixer.pre_init(frequency=22050, size=-16, channels=1, buffer=1024)
+except Exception:
+    pass
+
+# 2) Erst jetzt pygame initialisieren
 pygame.init()
 try:
-    pygame.mixer.pre_init(frequency=22050, size=-16, channels=1, buffer=1024)
     pygame.mixer.init()
 except pygame.error:
     pass
 
-try:
-    import js
-except Exception:
-    js = None
-
-def notify_state(name):
-    if js:
-        # In Iframe (to parent)
-        try:
-            js.window.parent.postMessage({"type": "game_state", "state": name}, "*")
-        except Exception:
-            pass
-        # Direct (self)
-        try:
-            js.window.postMessage({"type": "game_state_self", "state": name}, "*")
-        except Exception:
-            pass
-
-def is_browser():
-    return js is not None
+def notify_state(name: str):
+    if not is_browser():
+        return
+    # Iframe (zu parent) und direkt
+    try:
+        js.window.parent.postMessage({"type": "game_state", "state": name}, "*")
+    except Exception:
+        pass
+    try:
+        js.window.postMessage({"type": "game_state_self", "state": name}, "*")
+    except Exception:
+        pass
 
 def get_canvas_element():
     if not is_browser():
@@ -139,11 +157,14 @@ def load_sound(name, volume=1.0):
         s = pygame.mixer.Sound(path)
         s.set_volume(volume)
         return s
-    except Exception:
+    except Exception as e:
+        # Debug-Hinweis im Browser-Log, falls Asset fehlt
+        print(f"[audio] failed to load {path}: {e}")
         return None
 
+# Audio-Assets (Wind in 48 kHz Mono empfohlen)
 flap_sound      = load_sound("Flap.ogg", 0.5)
-wind_sound      = load_sound("Wind.ogg", 0.06)
+wind_sound      = load_sound("Wind-48000-mono.wav", 0.06)  # passe Name an, falls du OGG nutzt
 rauschen_sound  = load_sound("Rauschen.ogg", 1.0)
 phaser_sound    = load_sound("Phaser.ogg", 1.0)
 wrong_sound     = load_sound("Wrong.ogg", 1.0)
@@ -391,7 +412,8 @@ def mark_engaged():
     if is_browser():
         try:
             if wind_sound and not wind_started:
-                wind_sound.set_volume(0.06)
+                # Headroom lassen (WebKit clippt leicht)
+                wind_sound.set_volume(0.5 if is_webkit() else 0.6)
                 wind_sound.play(-1)
                 wind_started = True
         except Exception:
@@ -708,7 +730,6 @@ def draw_name_save_overlay(latest_score, top_scores, saved_once, rank_time_left_
         screen.blit(line, (WIDTH//2 - line.get_width()//2, y))
         y += 28
 
-    # Hints: show both timing info and "Press F to fly again"
     info = "Saving shows the ranking for 15s, then returns to start."
     if saved_once and rank_time_left_ms > 0:
         sec_left = max(0, int(math.ceil(rank_time_left_ms / 1000.0)))
@@ -1089,10 +1110,8 @@ async def main():
                                 result_input_buffer += event.unicode
 
                     elif state == STATE_NAME_SAVE:
-                        # Vor dem Speichern: keine Neustarts mit F/SPACE, nur Eingabe-Handling
                         if not name_saved_once:
                             if event.key == pygame.K_RETURN:
-                                # Nur einmal speichern
                                 calc_val = (cloud_values_sum if cloud_values_sum is not None else 0.0)
                                 calc_part = 0.0 if wrong_answer_given else abs(calc_val)
                                 total_val = calc_part + flight_bonus
@@ -1105,29 +1124,19 @@ async def main():
                                 }
                                 scores.append(entry)
                                 scores.sort(key=lambda s: s['total'], reverse=True)
-                                # Ranking anzeigen und Eingabe sperren
                                 rank_show_until = pygame.time.get_ticks() + 15000
                                 name_saved_once = True
-                                name_input = ""  # visuell locken
+                                name_input = ""
                             elif event.key == pygame.K_BACKSPACE:
                                 name_input = name_input[:-1]
                             else:
-                                # Zeichen anhängen, solange nicht gespeichert
                                 if len(name_input) < 20 and event.unicode.isprintable():
                                     name_input += event.unicode
                         else:
-                            # Nach dem Speichern: F wieder erlauben (Fly again)
-                            if event.key == pygame.K_f:
+                            if event.key == pygame.K_f or event.key == pygame.K_SPACE:
                                 reset_run_state()
                                 state = STATE_MODE_SELECT
                                 notify_state("mode_select")
-                            # Optional: SPACE auch wieder erlauben
-                            elif event.key == pygame.K_SPACE:
-                                reset_run_state()
-                                state = STATE_MODE_SELECT
-                                notify_state("mode_select")
-                            # RETURN nach Speichern macht nichts mehr (oder könntest du ignorieren)
-
 
             keys = pygame.key.get_pressed()
 
@@ -1162,11 +1171,9 @@ async def main():
                     cloud_y = random.randint(0, HEIGHT - 60)
                     cloud_size = random.randint(50, 100)
 
-                    # Decide if this cloud, upon entering the bird area, will count toward the goal
                     will_count_enter = (not count_freeze) and (cloud_counter < goal)
 
                     if will_count_enter:
-                        # First counting cloud must be a positive addition
                         if not first_collected_done:
                             op, v = ("+", random.randint(1, 10))
                         else:
@@ -1174,7 +1181,6 @@ async def main():
                     else:
                         op, v = ("+", 0)
 
-                    # Precompute cloud circles (4–7)
                     num_circles = random.randint(4, 7)
                     circles = []
                     for _ in range(num_circles):
@@ -1251,9 +1257,6 @@ async def main():
                                     zwitscher_sound.play()
                                     chirp_last = now
 
-                            # Animated popup text for the collected cloud:
-                            # - For the very first collected cloud: show only the number (always positive shown)
-                            # - Afterwards: show sign/op as before
                             if not first_collected_done:
                                 col_text = f"{abs(val)}"
                             else:
@@ -1269,7 +1272,6 @@ async def main():
                             })
                             scatter_cloud(cloud['x'], cloud['y'])
 
-                            # Mark first collection as done and enable signs for subsequent displays
                             if not first_collected_done:
                                 first_collected_done = True
                                 show_signs = True
@@ -1351,12 +1353,10 @@ async def main():
             # Timed staged popups in result screen
             if state == STATE_RESULT:
                 now = pygame.time.get_ticks()
-                # Bonus popup 3s after result screen opened
                 if not bonus_popup_shown and result_screen_opened_at:
                     if now - result_screen_opened_at >= 3000:
                         spawn_bonus_popup(flight_bonus)
                         bonus_popup_shown = True
-                # Auto total popup due (1s after ENTER), once
                 if (not total_score_popup_spawned) and auto_total_due_at and now >= auto_total_due_at:
                     raw_calc = (cloud_values_sum if cloud_values_sum is not None else 0.0)
                     calc_part = 0.0 if wrong_answer_given else abs(raw_calc)
@@ -1364,13 +1364,11 @@ async def main():
                     spawn_total_popup(total_value)
                     total_score_popup_spawned = True
                     total_popup_active = True
-                # Hide total popup after 2s visibility (ENTER + 3s)
                 if total_popup_active and auto_total_hide_at and now >= auto_total_hide_at:
                     for av in animated_values[:]:
                         if isinstance(av.get('text'), str) and av['text'].startswith("Total:"):
                             animated_values.remove(av)
                     total_popup_active = False
-                # Auto switch to name screen at ENTER + 3s
                 if auto_name_due_at and now >= auto_name_due_at:
                     state = STATE_NAME_SAVE
                     notify_state("name_save")
@@ -1434,7 +1432,6 @@ async def main():
                     else:
                         animated_values.remove(av)
 
-                # Draw clouds in PLAY/RESULT
                 if state in (STATE_PLAY, STATE_RESULT):
                     for cloud in clouds:
                         if cloud['x'] > WIDTH or (cloud['x'] + cloud['size']) < 0:
@@ -1480,10 +1477,8 @@ async def main():
                     'total': latest_total
                 }
 
-                # Remaining time for info text
                 time_left = max(0, rank_show_until - pygame.time.get_ticks()) if name_saved_once and rank_show_until else 0
                 draw_name_save_overlay(latest, scores, name_saved_once, time_left)
-                # Auto-return to start after 10s of showing the ranking (post-save)
                 if name_saved_once and rank_show_until and pygame.time.get_ticks() >= rank_show_until:
                     reset_run_state()
                     state = STATE_MODE_SELECT

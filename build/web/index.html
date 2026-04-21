@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="en-us"><script src="https://pygame-web.github.io/archives/0.9/pythons.js" type=module id=site data-LINES=57 data-CONSOLE=25 data-python=python3.12 data-os=vtx,fs,snd,gui async defer>#<!--
+<html lang="en-us"><script src="https://pygame-web.github.io/cdn/0.9.3/pythons.js" type=module id="site" data-python="python3.12" data-LINES=42 data-COLUMNS=132 data-os="vtx,snd,gui" async defer>#<!--
 
 print("""
 Loading math-bird-game from math-bird-game.apk
-    Pygbag Version : 0.9.2
-    Template Version : 0.9.0
+    Pygbag Version : 0.9.3
+    Template Version : 0.9.3
     Python  : 3.12
-    CDN URL : https://pygame-web.github.io/archives/0.9/
+    CDN URL : https://pygame-web.github.io/cdn/0.9.3/
     Screen  : 1280x720
     Title   : math-bird-game
     Folder  : math-bird-game
@@ -15,77 +15,20 @@ Loading math-bird-game from math-bird-game.apk
 
 """)
 
-
-# screen pixels (real, hardware)
-WIDTH=1024  # 1280
-HEIGHT=600  # 720
-
-# reference/idealized screen pixels
-REFX = 1980
-REFY = 1080
-
-def u(real, ref, v):
-    if abs(v)<0.9999999:
-        result = int( (float(real)/100.0) * (v*1000))
-        if v<0:
-            return real-result
-        return result
-    return int( (real/ref) * v )
-
-def ux(*argv):
-    global WIDTH, REFX
-    acc = 0
-    for v in argv:
-        acc += u(WIDTH, REFX, v)
-    return acc
-
-def uy(*argv):
-    global HEIGHT, REFY
-    acc = 0
-    for v in argv:
-        acc += u(HEIGHT, REFY, v)
-    return acc
-
-
-
+import sys
+import asyncio
+import platform
+import json
+from pathlib import Path
 
 # do not rename
 async def custom_site():
-
-    import sys
-    import asyncio
-    import platform
-    import json
-    from pathlib import Path
-
-
-
     import embed
-
-
     platform.document.body.style.background = "#7f7f7f"
-
-    import pygame
-
-    def compose():
-        pygame.display.update()
-        window.chromakey(None, *screen.get_colorkey(), 40)
-
-    pygame.init()
-    pygame.font.init()
-
-    screen = pygame.display.set_mode([ux(.100),uy(.100)], pygame.SRCALPHA, 32)
-    screen.set_colorkey( (0,0,0,0), pygame.RLEACCEL )
-    screen.fill( (0,0,0,0) )
-
-    compose()
 
     platform.window.transfer.hidden = true
     platform.window.canvas.style.visibility = "visible"
 
-
-
-    apk = "math-bird-game.apk"
 
     bundle = "math-bird-game"
 
@@ -94,101 +37,69 @@ async def custom_site():
     appdir.mkdir()
 
 
-    # mount apk
+    # unpack filesystem from compressed archive into work dir
+    if platform.window.location.host.find('.itch.zone')>0:
+        import zipfile
+        async with platform.fopen("math-bird-game.apk", "rb") as archive:
+            with zipfile.ZipFile(archive) as zip_ref:
+                zip_ref.extractall(appdir.as_posix())
+    else:
+        import tarfile
+        async with platform.fopen("math-bird-game.tar.gz", "rb") as archive:
+            tar = tarfile.open(fileobj=archive, mode="r:gz")
+            tar.extractall(path=appdir.as_posix(), filter='tar')
+            tar.close()
 
-    cfg = {
-        "io": "url",
-        "type":"mount",
-        "mount" : {
-            "point" : appdir.as_posix(),
-            "path" : "/",
-        },
-        "path" : f"/ => {appdir.as_posix()}",
-    }
-
-
-    track = platform.window.MM.prepare(apk, json.dumps(cfg))
-
-    marginx = ux(.020) # 20%
-    marginy = uy(.045) # 45%
-
-
-    def pg_bar(pos):
-        nonlocal marginx, marginy
-        # resolution of progress bar, recalculate since it may not be know yet.
-        total = track.len or 10  # avoid div0
-        slot = ux(.060)/ total # 60%
-
-        pygame.draw.rect(screen,(10,10,10),( marginx-ux(10), marginy-uy(10), (total*slot)+ux(20), uy(110) ) )
-        pygame.draw.rect(screen,(0,255,0), ( marginx, marginy, track.pos*slot, uy(90)) )
-
-    # wait until zip mount + overlayfs is complete
-    while not track.ready:
-        pg_bar(track.pos)
-        compose()
-        await asyncio.sleep(.1)
-
-    # fill it up in case it was cached and instant download
-    pg_bar(track.len)
-    compose()
-
-
-    # preloader will change dir and prepend it to sys.path
+    # preloader will change to work dir and prepend it to sys.path
     platform.run_main(PyConfig, loaderhome= appdir / "assets", loadermain=None)
 
 
-    # wait preloading complete
-    # that includes images and wasm compilation of bundled modules
+    # wait preloading complete : that includes images and wasm compilation of bundled modules
     while embed.counter()<0:
         await asyncio.sleep(.1)
 
     main = appdir / "assets" / "main.py"
 
-    # start async top level machinery and add a console.
-    await TopLevel_async_handler.start_toplevel(platform.shell, console=window.python.config.debug)
+    # TODO: test for window.webkitAudioContext and block aio loop until gesture if accessing media manager play
+    # before a gesture is recorded ( touch or click )
 
-    # now that apk is mounted we have access to font cache
-    # but we need to fill __file__ that is not yet set
-    __import__(__name__).__file__ = str(main)
-
-
-    # now make a prompt
-    fnt = pygame.sysfont.SysFont("freesans",  uy(80) )
-
-    def ui_callback(pkg, error=None):
-        nonlocal fnt
-        if error:
-            prompt = fnt.render(f"{error}", True, "black")
-        else:
-            prompt = fnt.render(f"Setting [{pkg}] up", True, "black")
-        pg_bar(track.len)
-        screen.blit(prompt, ( marginx+ ux(80), marginy - uy(10) ) )
-        compose()
-
-    # test/wait if user media interaction required
+    # test/wait user media interaction
     if not platform.window.MM.UME:
 
+        # now that apk is mounted we have access to font cache
+        # but we need to fill __file__ that is not yet set
+        __import__(__name__).__file__ = main
+
         # now make a prompt
-        fnt = pygame.sysfont.SysFont("freesans",  uy(80) )
-        prompt = fnt.render("Ready to start !", True, "blue")
-        pg_bar(track.len)
-        screen.blit(prompt, ( marginx+ ux(80), marginy - uy(10) ) )
-        compose()
-        print("""
-        * Waiting for media user engagement : please click/touch page *
-    """)
+        msg  = "Ready to start ! Please click/touch page"
+        platform.window.infobox.innerText = msg
+        print("\n"*4, f"    * Waiting for media user engagement. {msg} *" , "\n"*4)
+
         while not platform.window.MM.UME:
             await asyncio.sleep(.1)
 
-    # cleanup
-    screen.fill( (0,0,0,0) )
-    pygame.display.flip()
+    # start async top level machinery if not started and add a console in any case if requested.
+    await TopLevel_async_handler.start_toplevel(platform.shell, console=window.python.config.debug)
 
-    await shell.runpy(main, callback=ui_callback)
+    # now that apk is mounted we have access to font cache
+    # but we need to fill __file__/__name__ that are not yet set
+    __import__(__name__).__file__ = main
 
 
+    def ui_callback(pkg):
+        platform.window.infobox.innerText = f"installing {pkg}"
 
-import asyncio
+    await shell.source(main, callback=ui_callback)
+
+    # if you don't reach that step
+    # your main.py has an infinite sync loop somewhere !
+
+    platform.window.infobox.style.display = "none"
+    platform.window.config.gui_divider = 1
+    platform.window.window_resize()
+    print("default.tmpl: done")
+
+    shell.interactive()
 
 asyncio.run( custom_site() )
 
@@ -238,13 +149,32 @@ config = {
     _sdl2 : "canvas",
     user_canvas : 0,
     user_canvas_managed : 0,
+    gui_divider : 2,
     ume_block : 1,
     can_close : 0,
     archive : "math-bird-game",
-    gui_debug : 3,
-    cdn : "https://pygame-web.github.io/archives/0.9/",
+    gui_debug : 2,
+    cdn : "https://pygame-web.github.io/cdn/0.9.3/",
     autorun : 0,
-    PYBUILD : "3.12"
+    PYBUILD : "3.12",
+    fb_ar   :  1.77,
+    fb_width : "1280",
+    fb_height : "720"
+}
+
+function show_infobox() {
+    infobox.style.display = "block";
+
+    // Measure box
+    const w = infobox.offsetWidth;
+    const h = infobox.offsetHeight;
+
+    // Center in viewport
+    const left = (window.innerWidth - w) / 2;
+    const top = (window.innerHeight - h) / 2;
+
+    infobox.style.left = left + "px";
+    infobox.style.top = top + "px";
 }
 
 </script>
@@ -256,11 +186,6 @@ config = {
     <meta name="viewport" content="height=device-height, initial-scale=1.0">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes"/>
-
-    <link rel="prefetch" href="https://pygame-web.github.io/archives/0.9/pythonrc.py">
-    <link rel="prefetch" href="https://pygame-web.github.io/archives/0.9/vt/xterm.js">
-    <link rel="prefetch" href="https://pygame-web.github.io/archives/0.9/vt/xterm-addon-image.js">
-    <link rel="prefetch" href="https://pygame-web.github.io/archives/0.9/vt/xterm-addon-image.js">
 
 
     <link rel="icon" type="image/png" href="favicon.png" sizes="16x16">
@@ -280,6 +205,15 @@ config = {
             width: 300px;
         }
 
+        #infobox {
+            position: fixed; /* center relative to viewport */
+            background: green;
+            color: blue;
+            font-weight: bold;
+            padding: 12px 24px;
+ /*           display: none; */
+            z-index: 999999;
+        }
         div.emscripten { text-align: center; }
         div.emscripten_border { border: 1px solid black; }
         div.thick_border { border: 4px solid black; }
@@ -329,20 +263,29 @@ config = {
         }
 
         .trinfo{
-           position:relative;
-           right:0px;
+           position: relative;
+           right: 0px;
            border: 1px solid black;
         }
 
         .framed{
-           position:relative;
-           top:150px;
-           right:10px;
+           position: relative;
+           top: 150px;
+           right: 10px;
            border: 1px solid black;
         }
     </style>
 
-    <script src="https://pygame-web.github.io/archives/0.9//browserfs.min.js"></script>
+    <script>
+/*
+        if (navigator.serviceWorker)
+            navigator.serviceWorker.register("https://pygame-web.github.io/cdn/0.9.3/pygbag0.9.3.js")
+        else
+            console.warn("Service workers not supported")
+*/
+    </script>
+
+    <script src="https://pygame-web.github.io/cdn/0.9.3//browserfs.min.js"></script>
 
 </head>
 
@@ -357,11 +300,20 @@ config = {
     </div>
 
 
+
     <canvas class="emscripten" id="canvas"
 width="1px"
 height="1px"
     oncontextmenu="event.preventDefault()" tabindex=1>
     </canvas>
+
+    <canvas class="emscripten" id="canvas3d"
+width="1280px"
+height="720px"
+    oncontextmenu="event.preventDefault()" tabindex=1 hidden>
+    </canvas>
+
+    <div id="infobox">Loading, please wait ...</div>
 
     <div id=html></div>
 
@@ -403,7 +355,7 @@ frameborder="1"
                 mozallowfullscreen="true"
                 sandbox="allow-same-origin allow-top-navigation allow-scripts allow-pointer-lock"
                 allow="autoplay; fullscreen *; geolocation; microphone; camera; midi; monetization; xr-spatial-tracking; gamepad; gyroscope; accelerometer; xr; cross-origin-isolated"
-                src="https://pygame-web.github.io/archives/0.9/empty.html"
+                src="https://pygame-web.github.io/cdn/0.9.3/empty.html"
                 scrolling="yes">
             </iframe>
         </div>
@@ -422,6 +374,10 @@ frameborder="1"
 
     <script type="application/javascript">
 
+    globalThis.__canvas_resized = (self, ecw, ech) => {
+        console.warn("TODO: panda3d canvas monitor", self, ecw, ech)
+    }
+
     async function custom_onload(debug_hidden) {
         // this is called before anything python is loaded
         // make your js customization here
@@ -433,6 +389,7 @@ frameborder="1"
         info.hidden = debug_hidden
         box.hidden =  debug_hidden
 
+        show_infobox()
     }
 
     function custom_prerun(){
@@ -444,14 +401,6 @@ frameborder="1"
     function custom_postrun(){
         // python main and no VFS filesystem yet.
         console.log(__FILE__, "custom_postrun")
-
-        // prevent ff horizontal scroll
-        window.addEventListener("keydown", function(e) {
-            if(["Space","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].indexOf(e.code) > -1) {
-                if (!python.config.debug)
-                    e.preventDefault();
-            }
-        }, false);
 
     }
 
@@ -506,20 +455,21 @@ frameborder="1"
   @media (max-width: 820px), (max-height: 680px) {
     :root { --btn-size: 56px; --gap: 8px; }
     #mobile-controls .combo-pad { left: 12px; bottom: 12px; }
-    #mobile-controls .fs-float { right: 12px; bottom: 12px; }
+    #mobile-controls .fs-float  { right: 12px; bottom: 12px; }
   }
 
-  /* Only-FS mode shows just the floating FS button */
+  @media (max-width: 600px), (max-height: 500px) {
+    :root { --btn-size: 32px; --gap: 8px; }
+  }
+
   #mobile-controls.only-fs .combo-pad { display: none !important; }
-  #mobile-controls.only-fs {
-    visibility: visible !important; opacity: 1 !important; display: block !important;
-  }
+  #mobile-controls.only-fs { visibility: visible !important; opacity: 1 !important; display: block !important; }
 
-  /* Overlay container sits on top but does not block canvas except on buttons/gate */
   #mobile-controls {
     position: fixed !important; inset: 0 !important; pointer-events: none;
     z-index: 2147483647 !important; visibility: hidden !important; opacity: 0 !important; display: none !important;
   }
+  #mobile-controls.visible { visibility: visible !important; opacity: 1 !important; display: block !important; }
 
   #mobile-controls .btn {
     background: var(--btn-bg); color: var(--btn-fg);
@@ -528,15 +478,13 @@ frameborder="1"
     width: var(--btn-size); height: var(--btn-size);
     display: grid; place-items: center; text-align: center;
     user-select: none; -webkit-user-select: none; touch-action: manipulation;
+    box-sizing: border-box;
     transform-origin: center center;
     will-change: background, box-shadow, border-color, filter;
   }
   #mobile-controls .btn:active { background: var(--btn-active-bg); color: var(--btn-active-fg); }
 
-  /* Arrow buttons slightly brighter */
   #mobile-controls .btn.is-arrow { background: var(--btn-arrow-bg); }
-
-  /* Arrow breath animation during play */
   #mobile-controls.arrow-active .combo-pad .btn.is-arrow.pulse-on {
     animation: arrowBreath var(--pulse-duration) ease-in-out infinite !important;
   }
@@ -546,7 +494,6 @@ frameborder="1"
     100% { background-color: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.55); box-shadow: 0 0 0 rgba(255,255,255,0); filter: brightness(1.0); }
   }
 
-  /* 4x4 combo pad bottom-left */
   #mobile-controls .combo-pad {
     position: fixed; left: 16px; bottom: 16px; pointer-events: auto;
     display: grid; gap: var(--gap);
@@ -558,44 +505,39 @@ frameborder="1"
       "d7 d8 d9 keyEnter"
       "left d0 minus keyEnter";
   }
+  .combo-pad .btn[data-area="d1"]      { grid-area: d1; }
+  .combo-pad .btn[data-area="d2"]      { grid-area: d2; }
+  .combo-pad .btn[data-area="d3"]      { grid-area: d3; }
+  .combo-pad .btn[data-area="keyF"]    { grid-area: keyF; }
+  .combo-pad .btn[data-area="d4"]      { grid-area: d4; }
+  .combo-pad .btn[data-area="d5"]      { grid-area: d5; }
+  .combo-pad .btn[data-area="d6"]      { grid-area: d6; }
+  .combo-pad .btn[data-area="keyBack"] { grid-area: keyBack; }
+  .combo-pad .btn[data-area="d7"]      { grid-area: d7; }
+  .combo-pad .btn[data-area="d8"]      { grid-area: d8; } /* Up */
+  .combo-pad .btn[data-area="d9"]      { grid-area: d9; }
 
-  #mobile-controls .combo-pad .btn[data-area="d1"]      { grid-area: d1; }
-  #mobile-controls .combo-pad .btn[data-area="d2"]      { grid-area: d2; }
-  #mobile-controls .combo-pad .btn[data-area="d3"]      { grid-area: d3; }
-  #mobile-controls .combo-pad .btn[data-area="keyF"]    { grid-area: keyF; }
-
-  #mobile-controls .combo-pad .btn[data-area="d4"]      { grid-area: d4; }
-  #mobile-controls .combo-pad .btn[data-area="d5"]      { grid-area: d5; }
-  #mobile-controls .combo-pad .btn[data-area="d6"]      { grid-area: d6; }
-  #mobile-controls .combo-pad .btn[data-area="keyBack"] { grid-area: keyBack; }
-
-  #mobile-controls .combo-pad .btn[data-area="d7"]      { grid-area: d7; }
-  #mobile-controls .combo-pad .btn[data-area="d8"]      { grid-area: d8; }
-  #mobile-controls .combo-pad .btn[data-area="d9"]      { grid-area: d9; }
-
-  #mobile-controls .combo-pad .btn[data-area="keyEnter"] {
-    grid-area: keyEnter; height: calc(var(--btn-size) * 2 + var(--gap));
+  .combo-pad .btn[data-area="keyEnter"]{
+    grid-area: keyEnter;
+    align-self: stretch !important;
+    justify-self: stretch !important;
+    height: auto !important;
+    min-height: calc(var(--btn-size) * 2 + var(--gap)) !important;
   }
 
-  /* Bottom row: left=ArrowLeft, middle=0/Down, right=−/Right */
-  #mobile-controls .combo-pad .btn[data-area="left"]  { grid-area: left; }
-  #mobile-controls .combo-pad .btn[data-area="d0"]    { grid-area: d0; }
-  #mobile-controls .combo-pad .btn[data-area="minus"] { grid-area: minus; }
+  .combo-pad .btn[data-area="left"]  { grid-area: left; }
+  .combo-pad .btn[data-area="d0"]    { grid-area: d0; }
+  .combo-pad .btn[data-area="minus"] { grid-area: minus; }
 
-  /* Fullscreen button bottom-right */
-  #mobile-controls .fs-float {
-    position: fixed; right: 16px; bottom: 16px; z-index: 2147483647; pointer-events: auto;
-  }
+  #mobile-controls .fs-float { position: fixed; right: 16px; bottom: 16px; z-index: 2147483647; pointer-events: auto; }
   #mobile-controls .fs-float .btn { width: var(--btn-size); height: var(--btn-size); }
 
-  /* Play gate overlay: centered tappable area that guarantees 1st user gesture */
   #mobile-controls .play-gate {
     position: fixed; inset: 0; display: grid; place-items: center;
-    pointer-events: auto; /* must receive the gesture */
-    background: var(--gate-bg);
-    transition: opacity .25s ease;
+    pointer-events: auto; background: var(--gate-bg);
+    transition: opacity .2s ease;
   }
-  #mobile-controls .play-gate.hidden { opacity: 0; pointer-events: none; display: none; }
+  #mobile-controls .play-gate.hidden { opacity: 0; pointer-events: none; }
 
   #mobile-controls .play-gate .ring {
     width: 160px; height: 160px; border-radius: 50%;
@@ -612,17 +554,11 @@ frameborder="1"
     100% { transform: scale(0.96); box-shadow: 0 0 0 0 rgba(255,255,255,0.0); }
   }
 
-  /* Keep canvas absolute for pygbag preloader; our overlay floats above it */
-  canvas#canvas {
-    z-index: 5 !important; position: absolute !important; top: 0; left: 0; right: 0; bottom: 0;
-  }
+  canvas#canvas { z-index: 5 !important; position: absolute !important; inset: 0; }
 </style>
 
 <div id="mobile-controls" aria-hidden="true">
-  <!-- Play-gate sits on top until first interaction -->
-  <div class="play-gate" id="play-gate">
-    <div class="ring">Play</div>
-  </div>
+  <div class="play-gate" id="play-gate"><div class="ring">Play</div></div>
 
   <div class="combo-pad">
     <div class="btn" data-area="d1"     data-digit="1">1</div>
@@ -636,192 +572,246 @@ frameborder="1"
     <div class="btn" data-area="keyBack" data-key="Backspace">⌫</div>
 
     <div class="btn" data-area="d7"     data-digit="7">7</div>
-    <div class="btn is-arrow" data-area="d8"     data-digit="8" data-arrow="ArrowUp">▲ 8</div>
+    <div class="btn is-arrow pulse-on" data-area="d8"     data-digit="8" data-arrow="ArrowUp">▲ 8</div>
     <div class="btn" data-area="d9"     data-digit="9">9</div>
     <div class="btn" data-area="keyEnter" data-key="Enter">⏎</div>
 
-    <div class="btn is-arrow" data-area="left"  data-arrow="ArrowLeft">◀︎</div>
-    <div class="btn is-arrow" data-area="d0"    data-digit="0" data-arrow="ArrowDown">▼ 0</div>
-    <div class="btn is-arrow" data-area="minus" data-char="−"  data-arrow="ArrowRight">− ▶︎</div>
+    <div class="btn is-arrow pulse-on" data-area="left"  data-arrow="ArrowLeft">◀︎</div>
+    <div class="btn is-arrow pulse-on" data-area="d0"    data-digit="0" data-arrow="ArrowDown">▼ 0</div>
+    <div class="btn is-arrow pulse-on" data-area="minus" data-char="−"  data-arrow="ArrowRight">− ▶︎</div>
   </div>
 
   <div class="fs-float"><div class="btn" data-action="fs" title="Fullscreen">⤢</div></div>
 </div>
 
 <script>
-  (function () {
-    function ready(fn){
-      if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', fn, { once: true }); }
-      else { fn(); }
+(function () {
+  function ready(fn){ if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', fn, { once: true }); } else { fn(); } }
+
+  // BrowserFS Fallback: lädt lokale Kopie, falls CDN blockiert/ORB aktiv ist
+  function checkAndLoadBrowserFS() {
+    try {
+      if (window.BrowserFS) return;
+      var local = (window.location.origin + window.location.pathname).replace(/\/[^\/]*$/,'') + '/vendor/browserfs.min.js';
+      var s = document.createElement('script');
+      s.src = local; s.async = true;
+      s.onerror = function(){
+        var s2 = document.createElement('script');
+        s2.src = 'https://pygame-web.github.io/cdn/0.9.3/browserfs.min.js'; // ohne doppelten Slash
+        document.head.appendChild(s2);
+      };
+      document.head.appendChild(s);
+    } catch(e){}
+  }
+
+  ready(function initMobileControls() {
+    if (window.__MB_UI_INITED__) return;           // Doppel-Init verhindern
+    window.__MB_UI_INITED__ = true;
+
+    checkAndLoadBrowserFS(); // früh versuchen
+
+    const root = document.getElementById('mobile-controls');
+    if (!root) return;
+
+    function applyVisible() {
+      root.classList.add('visible');
+      root.style.setProperty('z-index', '2147483647', 'important');
+    }
+    function canvasOrWindow() { return document.querySelector('canvas') || window; }
+    function focusCanvasRetries(){
+      const c = document.querySelector('canvas'); if (!c) return;
+      try{ c.focus({preventScroll:true}); }catch(e){}
+      setTimeout(()=>{ try{ c.focus({preventScroll:true}); }catch(e){} }, 120);
+      setTimeout(()=>{ try{ c.focus({preventScroll:true}); }catch(e){} }, 400);
+      setTimeout(()=>{ try{ c.focus({preventScroll:true}); }catch(e){} }, 1000);
+    }
+    function dispatchEnterOnce() {
+      const t = canvasOrWindow();
+      try {
+        t.dispatchEvent(new KeyboardEvent('keydown', { key:'Enter', code:'Enter', bubbles:true, cancelable:true }));
+        setTimeout(()=>t.dispatchEvent(new KeyboardEvent('keyup', { key:'Enter', code:'Enter', bubbles:true, cancelable:true })), 10);
+      } catch(e) {}
     }
 
-    ready(function initMobileControls() {
-      const root = document.getElementById('mobile-controls');
-      if (!root) return;
-
-      function applyVisible() {
-        root.style.setProperty('z-index', '2147483647', 'important');
-        root.style.setProperty('visibility', 'visible', 'important');
-        root.style.setProperty('opacity', '1', 'important');
-        root.style.setProperty('display', 'block', 'important');
+    const isiOS = /iphone|ipad|ipod/i.test((navigator.userAgent||'') + (navigator.platform||''));
+    function dispatchPointerToCanvas() {
+      if (isiOS) return; // Auf iOS keine Pointer-Injektion (vermeidet Rekursion)
+      const c = document.querySelector('canvas');
+      if (!c) return;
+      try {
+        const rect = c.getBoundingClientRect();
+        const cx = rect.left + Math.max(1, Math.min(rect.width - 1, rect.width * 0.5));
+        const cy = rect.top  + Math.max(1, Math.min(rect.height - 1, rect.height * 0.5));
+        const opts = { bubbles: true, cancelable: true, clientX: cx, clientY: cy, pointerId: 1, pointerType: 'touch' };
+        c.dispatchEvent(new PointerEvent('pointerdown', opts));
+        c.dispatchEvent(new PointerEvent('pointerup',   opts));
+        c.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: cx, clientY: cy }));
+      } catch(e) {
+        try { c.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); } catch(_) {}
       }
-      function canvasOrWindow() { return document.querySelector('canvas') || window; }
+    }
 
-      // Make buttons clickable
-      root.querySelectorAll('.btn').forEach(b => { b.style.pointerEvents = 'auto'; });
+    root.querySelectorAll('.btn').forEach(b => { b.style.pointerEvents = 'auto'; });
 
-      // Stick to a simple, robust mobile detection (computed once)
-      let mobileSticky = null;
-      function computeMobileSticky() {
-        if (mobileSticky !== null) return mobileSticky;
-        const ua = (navigator.userAgent || '').toLowerCase();
-        const isAndroid = /android/.test(ua);
-        const isIOS = /iphone|ipad|ipod/.test(ua);
-        const hasTouch = (('ontouchstart' in window) || (navigator.maxTouchPoints||0) > 0);
-        mobileSticky = isAndroid || isIOS || hasTouch;
-        return mobileSticky;
-      }
+    const qs = new URLSearchParams(location.search);
+    const forceMobile = (qs.get('forceMobile') === '1') || (qs.get('forcemobile') === '1');
 
-      // Show overlay based on device: full pad on mobile, FS-only on desktop
-      function evaluate() {
-        try {
-          const isMob = computeMobileSticky();
-          if (isMob) {
-            root.classList.remove('only-fs');  // show full control pad
-          } else {
-            root.classList.add('only-fs');     // desktop: FS button only
-          }
-          applyVisible();
-        } catch(e) {
-          root.classList.add('only-fs');
-          applyVisible();
-        }
-      }
+    let mobileSticky = null;
+    function computeMobileSticky() {
+      if (mobileSticky !== null) return mobileSticky;
+      const ua = (navigator.userAgent || '').toLowerCase();
+      const isAndroid = /android/.test(ua);
+      const isIOSua = /iphone|ipad|ipod/.test(ua);
+      const hasTouch = (('ontouchstart' in window) || (navigator.maxTouchPoints||0) > 0);
+      mobileSticky = isAndroid || isIOSua || hasTouch;
+      return mobileSticky;
+    }
 
-      // Play gate logic
-      function dispatchEnterOnce() {
-        const target = canvasOrWindow();
-        const down = new KeyboardEvent('keydown', { key:'Enter', code:'Enter', bubbles:true, cancelable:true });
-        const up   = new KeyboardEvent('keyup',   { key:'Enter', code:'Enter', bubbles:true, cancelable:true });
-        target.dispatchEvent(down);
-        setTimeout(()=>target.dispatchEvent(up), 10);
-      }
-      function hintUME() {
-        try {
-          if (window.MM && typeof window.MM.unlock === 'function') { try { window.MM.unlock(); } catch(e){} }
-          if (window.python && (window.python.run || window.python.eval)) {
-            (window.python.run || window.python.eval).call(window.python, "0");
-          } else if (window.pyodide?.runPython) {
-            window.pyodide.runPython("0");
-          }
-        } catch(e){}
-      }
-      const gate = document.getElementById('play-gate');
-      function closeGate() {
-        if (!gate || gate.classList.contains('hidden')) return;
-        gate.classList.add('hidden');
+    function evaluate() {
+      try {
+        const isMob = computeMobileSticky();
+        if (forceMobile || isMob) root.classList.remove('only-fs');
+        else root.classList.add('only-fs');
         applyVisible();
-        try { document.querySelector('canvas')?.focus?.({preventScroll:true}); } catch(e){}
-        dispatchEnterOnce();
-        hintUME();
+      } catch(e) {
+        root.classList.add('only-fs'); applyVisible();
       }
-      ['touchstart','click','keydown'].forEach(ev=>{
-        (ev === 'keydown' ? window : gate).addEventListener(ev, (e)=>{
-          if (ev !== 'keydown' || e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault?.();
-            closeGate();
-          }
-        }, { passive: ev!=='touchstart' });
-      });
+    }
 
-      // Key helpers for pad
-      const active = new Map();
-      function dispatchKey(code, type) {
-        const keyMap = {ArrowUp:'ArrowUp',ArrowDown:'ArrowDown',ArrowLeft:'ArrowLeft',ArrowRight:'ArrowRight',KeyF:'f',Enter:'Enter',Backspace:'Backspace'};
-        const key = keyMap[code] || '';
-        const evt = new KeyboardEvent(type, { key, code, bubbles:true, cancelable:true });
-        canvasOrWindow().dispatchEvent(evt);
+    function stabilizeAudio() {
+      try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        const ctx =
+          (window.MM && (window.MM.ctx || window.MM.context)) ||
+          window.__audioCtx ||
+          (AC ? (window.__audioCtx = new AC()) : null);
+        if (!ctx) return;
+        if (ctx.state !== 'running') { ctx.resume?.(); }
+        const seconds = 0.05;
+        const sr = ctx.sampleRate || 48000;
+        const buf = ctx.createBuffer(1, Math.max(1, Math.floor(sr * seconds)), sr);
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(ctx.destination);
+        src.start(0);
+      } catch(e) {}
+    }
+    try { window.stabilizeAudio = stabilizeAudio; } catch(e) {}
+
+    const gate = document.getElementById('play-gate');
+    let gateJustClosedAt = 0;
+    let gateClosed = false; // iOS: Einmal-Guard
+
+    function closeGate() {
+      if (gateClosed) return;
+      gateClosed = true;
+
+      gateJustClosedAt = Date.now();
+      if (gate) {
+        try { gate.style.pointerEvents = 'none'; } catch(e) {}
+        gate.classList.add('hidden');
+        try { gate.remove(); } catch(e) {}
       }
-      function startRepeat(code){ if(active.has(code)) return; dispatchKey(code,'keydown'); const itv=setInterval(()=>dispatchKey(code,'keydown'),55); active.set(code,itv); }
-      function stopRepeat(code){ const itv=active.get(code); if(itv) clearInterval(itv); active.delete(code); dispatchKey(code,'keyup'); }
-      function stopAllRepeats(){ for (const [c,i] of active){ clearInterval(i); dispatchKey(c,'keyup'); } active.clear(); }
+      try { root.style.pointerEvents = 'none'; } catch(e) {}
 
-      function bindComboBtn(el) {
-        const digit = el.getAttribute('data-digit');
-        const ch    = el.getAttribute('data-char');
-        const key   = el.getAttribute('data-key');
-        const arrow = el.getAttribute('data-arrow');
+      applyVisible();
+      focusCanvasRetries();
 
-        const onDown = (e)=>{
-          e.preventDefault();
-          closeGate(); // first gesture closes gate
-          if ((digit || ch || key) && active.size && !arrow) stopAllRepeats();
-          if (digit){ const k='Digit'+String(digit); const t=canvasOrWindow();
-            const d=new KeyboardEvent('keydown',{key:String(digit),code:k,bubbles:true,cancelable:true});
-            const u=new KeyboardEvent('keyup',{key:String(digit),code:k,bubbles:true,cancelable:true});
-            t.dispatchEvent(d); setTimeout(()=>t.dispatchEvent(u),10);
-          }
-          if (ch){ const t=canvasOrWindow(); const code='Minus';
-            const d=new KeyboardEvent('keydown',{key:'-',code, bubbles:true,cancelable:true});
-            const u=new KeyboardEvent('keyup',  {key:'-',code, bubbles:true,cancelable:true});
-            t.dispatchEvent(d); setTimeout(()=>t.dispatchEvent(u),10);
-          }
-          if (key){ dispatchKey(key,'keydown'); if (key==='Backspace' || key==='KeyF') setTimeout(()=>dispatchKey(key,'keyup'),10); }
-          if (arrow){ startRepeat(arrow); }
-        };
-        const onUp=(e)=>{ e.preventDefault(); if (key && key!=='Backspace' && key!=='KeyF') dispatchKey(key,'keyup'); if (arrow) stopRepeat(arrow); };
+      dispatchEnterOnce();
+      try { stabilizeAudio(); } catch(e) {}
 
-        el.addEventListener('touchstart', onDown, {passive:false});
-        el.addEventListener('touchend',   onUp,   {passive:false});
-        el.addEventListener('touchcancel',onUp,   {passive:false});
-        el.addEventListener('mousedown',  onDown);
-        el.addEventListener('mouseup',    onUp);
-        el.addEventListener('mouseleave', onUp);
+      requestAnimationFrame(()=>dispatchPointerToCanvas());
+
+      try {
+        if (window.MM && typeof window.MM.unlock === 'function') window.MM.unlock();
+        if (window.python && (window.python.run || window.python.eval)) (window.python.run || window.python.eval).call(window.python, "0");
+        else if (window.pyodide?.runPython) window.pyodide.runPython("0");
+      } catch(e) {}
+
+      // Gate-Listener entfernen (Reentrancy verhindern)
+      try {
+        gate.removeEventListener('touchstart', onGateTouchStart, {passive:false});
+        gate.removeEventListener('click', onGateClick);
+        window.removeEventListener('keydown', onGateKeydown, {passive:true});
+      } catch(e) {}
+    }
+
+    function onGateTouchStart(e){ e.preventDefault(); closeGate(); }
+    function onGateClick(e){ e.preventDefault(); closeGate(); }
+    function onGateKeydown(e){
+      if (!e.isTrusted) return; // synthetische Events ignorieren
+      if (e.key==='Enter' || e.key===' ') { closeGate(); }
+    }
+
+    gate.addEventListener('touchstart', onGateTouchStart, {passive:false});
+    gate.addEventListener('click', onGateClick);
+    window.addEventListener('keydown', onGateKeydown, {passive:true});
+
+    document.addEventListener('pointerdown', (e) => {
+      if (Date.now() - gateJustClosedAt < 600) {
+        try { root.style.pointerEvents = 'none'; } catch(_) {}
       }
-      root.querySelectorAll('.combo-pad .btn').forEach(bindComboBtn);
+    }, true);
 
-      // Fullscreen minimal; keep pad only on mobile, FS button only on desktop
-      function isDomFS(){ return !!document.fullscreenElement; }
-      function enterFS(){ try { document.querySelector('canvas')?.focus?.({preventScroll:true}); const p=document.documentElement.requestFullscreen(); p?.then?.(()=>{}).catch?.(()=>{});} catch(e){} }
-      function exitFS(){ try { const p=document.exitFullscreen(); p?.then?.(()=>{}).catch?.(()=>{});} catch(e){} }
+    const active = new Map();
+    function dispatchKey(code, type) {
+      const keyMap = {ArrowUp:'ArrowUp',ArrowDown:'ArrowDown',ArrowLeft:'ArrowLeft',ArrowRight:'ArrowRight',KeyF:'f',Enter:'Enter',Backspace:'Backspace'};
+      const key = keyMap[code] || '';
+      try { canvasOrWindow().dispatchEvent(new KeyboardEvent(type, { key, code, bubbles:true, cancelable:true })); } catch(e) {}
+    }
+    function startRepeat(code){ if(active.has(code)) return; dispatchKey(code,'keydown'); const itv=setInterval(()=>dispatchKey(code,'keydown'),55); active.set(code,itv); }
+    function stopRepeat(code){ const id=active.get(code); if(id) clearInterval(id); active.delete(code); dispatchKey(code,'keyup'); }
+    function stopAllRepeats(){ for (const [c,i] of active){ clearInterval(i); dispatchKey(c,'keyup'); } active.clear(); }
 
-      const fsBtn = root.querySelector('.fs-float [data-action="fs"]');
-      if (fsBtn) {
-        const guard=(e)=>{
-          e.preventDefault();
-          const isMob = computeMobileSticky();
-          if (isMob) root.classList.remove('only-fs'); else root.classList.add('only-fs');
-          isDomFS()? exitFS() : enterFS();
-          const reap=()=>applyVisible(); reap(); setTimeout(reap,50); setTimeout(reap,200);
-        };
-        fsBtn.addEventListener('click', guard);
-        fsBtn.addEventListener('touchstart', guard, {passive:false});
-      }
+    function bindComboBtn(el) {
+      const digit = el.getAttribute('data-digit');
+      const ch    = el.getAttribute('data-char');
+      const key   = el.getAttribute('data-key');
+      const arrow = el.getAttribute('data-arrow');
 
-      document.addEventListener('fullscreenchange', ()=>{
-        try {
-          const isMob = computeMobileSticky();
-          if (isDomFS()) { if (isMob) root.classList.remove('only-fs'); else root.classList.add('only-fs'); }
-          else { if (isMob) root.classList.remove('only-fs'); else root.classList.add('only-fs'); }
-        } catch(e){}
-        const reap=()=>applyVisible(); reap(); setTimeout(reap,50); setTimeout(reap,200);
-      }, {passive:true});
+      const onDown = (e)=>{
+        e.preventDefault();
+        closeGate();
+        if ((digit || ch || key) && active.size && !arrow) stopAllRepeats();
+        if (digit){ const k='Digit'+String(digit); const t=canvasOrWindow(); try {
+          t.dispatchEvent(new KeyboardEvent('keydown',{key:String(digit),code:k,bubbles:true,cancelable:true}));
+          setTimeout(()=>t.dispatchEvent(new KeyboardEvent('keyup',{key:String(digit),code:k,bubbles:true,cancelable:true})),10);
+        } catch(e){} }
+        if (ch){ const t=canvasOrWindow(); const code='Minus'; try {
+          t.dispatchEvent(new KeyboardEvent('keydown',{key:'-',code,bubbles:true,cancelable:true}));
+          setTimeout(()=>t.dispatchEvent(new KeyboardEvent('keyup',{key:'-',code,bubbles:true,cancelable:true})),10);
+        } catch(e){} }
+        if (key){ dispatchKey(key,'keydown'); if (key==='Backspace' || key==='KeyF') setTimeout(()=>dispatchKey(key,'keyup'),10); }
+        if (arrow){ startRepeat(arrow); }
+      };
+      const onUp=(e)=>{ e.preventDefault(); if (key && key!=='Backspace' && key!=='KeyF') dispatchKey(key,'keyup'); if (arrow) stopRepeat(arrow); };
 
-      // Keep canvas focused enough for keys
-      function focusCanvasSoon(){ const c=document.querySelector('canvas'); if(!c) return; try{ c.focus({preventScroll:true}); }catch(e){} }
-      setTimeout(focusCanvasSoon, 80);
-      setTimeout(focusCanvasSoon, 400);
-      document.addEventListener('pointerdown', focusCanvasSoon, { passive: true });
+      el.addEventListener('touchstart', onDown, {passive:false});
+      el.addEventListener('touchend',   onUp,   {passive:false});
+      el.addEventListener('touchcancel',onUp,   {passive:false});
+      el.addEventListener('mousedown',  onDown);
+      el.addEventListener('mouseup',    onUp);
+      el.addEventListener('mouseleave', onUp);
+    }
+    document.querySelectorAll('.combo-pad .btn').forEach(bindComboBtn);
 
-      // Initial evaluation and follow-ups
-      evaluate();
-      window.addEventListener('resize', evaluate, { passive: true });
-      window.addEventListener('orientationchange', evaluate, { passive: true });
-      setTimeout(evaluate, 150); setTimeout(evaluate, 600); setTimeout(evaluate, 1200);
-    });
-  })();
+    function isDomFS(){ return !!document.fullscreenElement; }
+    function enterFS(){ try { focusCanvasRetries(); const p=document.documentElement.requestFullscreen(); p?.then?.(()=>{}).catch?.(()=>{});} catch(e){} }
+    function exitFS(){ try { const p=document.exitFullscreen(); p?.then?.(()=>{}).catch?.(()=>{});} catch(e){} }
+    const fsBtn = root.querySelector('.fs-float [data-action="fs"]');
+    if (fsBtn) {
+      const guard=(e)=>{ e.preventDefault(); const isMob = computeMobileSticky(); if (forceMobile || isMob) root.classList.remove('only-fs'); else root.classList.add('only-fs'); isDomFS()? exitFS() : enterFS(); const reap=()=>applyVisible(); reap(); setTimeout(reap,50); setTimeout(reap,200); };
+      fsBtn.addEventListener('click', guard);
+      fsBtn.addEventListener('touchstart', guard, {passive:false});
+    }
+
+    evaluate();
+    window.addEventListener('resize', evaluate, { passive: true });
+    window.addEventListener('orientationchange', evaluate, { passive: true });
+    setTimeout(evaluate, 150); setTimeout(evaluate, 600); setTimeout(evaluate, 1200);
+  });
+})();
 </script>
-
 <!-- END mobile-controls -->
 
 </body>
